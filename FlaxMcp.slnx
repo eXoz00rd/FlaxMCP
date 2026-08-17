@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FlaxMcp/FlaxMcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FlaxMcp.Tests/FlaxMcp.Tests.csproj" />
+  </Folder>
+</Solution>
