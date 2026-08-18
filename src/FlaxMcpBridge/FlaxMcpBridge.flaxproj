@@ -1,0 +1,14 @@
+{
+	"Name": "FlaxMcp Bridge",
+	"Version": "0.1.0",
+	"Company": "",
+	"Copyright": "",
+	"GameTarget": "FlaxMcpBridgeTarget",
+	"EditorTarget": "FlaxMcpBridgeEditorTarget",
+	"References": [
+		{
+			"Name": "$(EnginePath)/Flax.flaxproj"
+		}
+	],
+	"MinEngineVersion": "1.12.6912"
+}

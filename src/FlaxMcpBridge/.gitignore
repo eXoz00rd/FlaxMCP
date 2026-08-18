@@ -1,0 +1,11 @@
+# Flax-generated, per official FlaxEngine/ExamplePlugin .gitignore
+/Binaries/
+/Cache/
+/Logs/
+/Output/
+/Screenshots/
+*.HotReload.*
+Source/*.Gen.*
+*.csproj
+*.sln
+*.sln.DotSettings.user

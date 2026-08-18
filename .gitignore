@@ -1,0 +1,41 @@
+## .NET build results
+bin/
+obj/
+out/
+artifacts/
+*.nupkg
+*.snupkg
+
+## User-specific and IDE files
+.vs/
+.idea/
+.junie/
+*.user
+*.suo
+*.DotSettings.user
+
+## Test and coverage results
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+## Local settings and secrets
+appsettings.*.local.json
+*.local.json
+.env
+.env.*
+secrets.json
+
+## Flax Engine build/runtime artifacts (also gitignored per plugin project; kept here as a catch-all)
+Cache/
+Logs/
+Binaries/
+
+## Docs (internal planning, not shipped)
+docs/
+
+## OS files
+Thumbs.db
+.DS_Store

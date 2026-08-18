@@ -1,0 +1,8 @@
+<Project>
+
+  <!--
+    Stops the repo-root Directory.Build.props (Nullable/TreatWarningsAsErrors, meant for the
+    FlaxMcp server project) from applying to Flax-generated csproj files under this directory.
+  -->
+
+</Project>

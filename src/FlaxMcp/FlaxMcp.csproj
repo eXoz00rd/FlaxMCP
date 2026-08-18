@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FlaxMcp</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <PackageType>McpServer;DotnetTool</PackageType>
+    <ToolCommandName>flax-mcp</ToolCommandName>
+    <PackageId>FlaxMcp</PackageId>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>dev</VersionSuffix>
+    <Description>MCP server for Flax Engine projects.</Description>
+    <PackageTags>mcp;mcp-server;flax;flax-engine;game-development</PackageTags>
+    <RepositoryUrl>https://github.com/eXoz00rd/FlaxMCP</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FlaxMcp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include=".mcp\server.json" Pack="true" PackagePath=".mcp/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+    <PackageReference Include="ModelContextProtocol" Version="2.1.0" />
+  </ItemGroup>
+
+</Project>

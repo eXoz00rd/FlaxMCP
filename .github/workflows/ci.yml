@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore FlaxMcp.slnx
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
+      - name: Build
+        run: dotnet build FlaxMcp.slnx --configuration Release --no-restore
+      - name: Test
+        run: dotnet test FlaxMcp.slnx --configuration Release --no-build
