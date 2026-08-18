@@ -26,7 +26,7 @@ public sealed class FlaxMcpOptionsValidator : IValidateOptions<FlaxMcpOptions>
             return ValidateOptionsResult.Fail(ex.Message);
         }
 
-        var editorExe = Path.Combine(enginePath, "Binaries", "Editor", "Win64", options.EditorConfig, "FlaxEditor.exe");
+        var editorExe = EngineLocator.ResolveEditorExecutable(enginePath, options.EditorConfig);
         if (!File.Exists(editorExe))
         {
             return ValidateOptionsResult.Fail(

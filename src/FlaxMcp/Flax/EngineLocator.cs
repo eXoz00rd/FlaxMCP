@@ -61,6 +61,14 @@ public static class EngineLocator
         }
     }
 
+    /// <summary>
+    /// Resolves the path to <c>FlaxEditor.exe</c> for the given engine install and editor build config.
+    /// </summary>
+    public static string ResolveEditorExecutable(string enginePath, string editorConfig)
+    {
+        return Path.Combine(enginePath, "Binaries", "Editor", "Win64", editorConfig, "FlaxEditor.exe");
+    }
+
     private static bool IsValidEngineRoot(string path)
     {
         return File.Exists(Path.Combine(path, "Flax.flaxproj"));
