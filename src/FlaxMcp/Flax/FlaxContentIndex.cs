@@ -14,9 +14,15 @@ namespace FlaxMcp.Flax;
 /// </summary>
 public sealed class FlaxContentIndex
 {
+    private static readonly EnumerationOptions ContentEnumerationOptions = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = true,
+    };
+
     private readonly IOptions<FlaxMcpOptions> _options;
     private readonly Lock _lock = new();
-    private IReadOnlyList<FlaxContentAssetInfo>? _assets;
+    private (IReadOnlyList<FlaxContentAssetInfo> Assets, IReadOnlyDictionary<string, FlaxContentAssetInfo> ById)? _index;
 
     public FlaxContentIndex(IOptions<FlaxMcpOptions> options)
     {
@@ -25,7 +31,7 @@ public sealed class FlaxContentIndex
 
     public IReadOnlyList<FlaxContentAssetInfo> Search(string? query, string? typeName, string? extension)
     {
-        return GetAssets()
+        return GetIndex().Assets
                .Where(asset => query is null || asset.RelativePath.Contains(query, StringComparison.OrdinalIgnoreCase))
                .Where(asset => typeName is null || string.Equals(asset.TypeName, typeName, StringComparison.OrdinalIgnoreCase))
                .Where(asset => extension is null || string.Equals(asset.Extension, extension, StringComparison.OrdinalIgnoreCase))
@@ -35,31 +41,42 @@ public sealed class FlaxContentIndex
 
     public FlaxContentAssetInfo? GetById(string id)
     {
-        return GetAssets().FirstOrDefault(asset => string.Equals(asset.Id, id, StringComparison.OrdinalIgnoreCase));
+        return GetIndex().ById.GetValueOrDefault(id);
     }
 
-    private IReadOnlyList<FlaxContentAssetInfo> GetAssets()
+    private (IReadOnlyList<FlaxContentAssetInfo> Assets, IReadOnlyDictionary<string, FlaxContentAssetInfo> ById) GetIndex()
     {
         lock (_lock)
         {
-            return _assets ??= BuildIndex();
+            return _index ??= BuildIndex();
         }
     }
 
-    private List<FlaxContentAssetInfo> BuildIndex()
+    private (IReadOnlyList<FlaxContentAssetInfo>, IReadOnlyDictionary<string, FlaxContentAssetInfo>) BuildIndex()
     {
         var projectFile = _options.Value.ResolveProjectFile();
         var contentDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, "Content");
 
         if (!Directory.Exists(contentDirectory))
         {
-            return [];
+            return ([], new Dictionary<string, FlaxContentAssetInfo>());
         }
 
-        return Directory
-               .EnumerateFiles(contentDirectory, "*", SearchOption.AllDirectories)
-               .Select(filePath => ReadAsset(filePath, contentDirectory))
-               .ToList();
+        var assets = Directory
+                     .EnumerateFiles(contentDirectory, "*", ContentEnumerationOptions)
+                     .Select(filePath => ReadAsset(filePath, contentDirectory))
+                     .ToList();
+
+        var byId = new Dictionary<string, FlaxContentAssetInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var asset in assets)
+        {
+            if (asset.Id is not null)
+            {
+                byId.TryAdd(asset.Id, asset);
+            }
+        }
+
+        return (assets, byId);
     }
 
     private static FlaxContentAssetInfo ReadAsset(string filePath, string contentDirectory)
@@ -90,7 +107,7 @@ public sealed class FlaxContentIndex
             var id = document["ID"]?.GetValue<string>();
             return id is null ? null : (id, document["TypeName"]?.GetValue<string>() ?? string.Empty);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             return null;
         }

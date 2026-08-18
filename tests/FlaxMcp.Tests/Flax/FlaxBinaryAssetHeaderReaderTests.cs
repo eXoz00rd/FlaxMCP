@@ -50,6 +50,17 @@ public sealed class FlaxBinaryAssetHeaderReaderTests : IDisposable
     }
 
     [Fact]
+    public void TryRead_WithEmptyTypeName_ReturnsNull()
+    {
+        var filePath = Path.Combine(_tempDir, "EmptyTypeName.flax");
+        WriteHeader(filePath, "CFWF"u8.ToArray(), RealFloorMaterialGuidBytes, string.Empty);
+
+        var result = FlaxBinaryAssetHeaderReader.TryRead(filePath);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void TryRead_WithTruncatedFile_ReturnsNull()
     {
         var filePath = Path.Combine(_tempDir, "Truncated.flax");

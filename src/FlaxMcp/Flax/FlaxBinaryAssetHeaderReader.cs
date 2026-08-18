@@ -34,6 +34,10 @@ public static class FlaxBinaryAssetHeaderReader
 
             reader.BaseStream.Position = TypeNameOffset;
             var typeName = ReadNullTerminatedUtf16(reader);
+            if (string.IsNullOrEmpty(typeName))
+            {
+                return null;
+            }
 
             return (FormatFlaxGuid(guidBytes), typeName);
         }

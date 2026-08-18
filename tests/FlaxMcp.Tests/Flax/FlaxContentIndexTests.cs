@@ -103,6 +103,21 @@ public sealed class FlaxContentIndexTests : IDisposable
         Assert.Null(asset);
     }
 
+    [Fact]
+    public void Search_WithNonStringIdField_StillIndexesFileWithNullMetadata()
+    {
+        File.WriteAllText(
+            Path.Combine(_contentDir, "BadId.json"),
+            """{ "ID": 12345, "TypeName": "FlaxEngine.Whatever", "Data": {} }"""
+        );
+
+        var results = _index.Search(query: "BadId", typeName: null, extension: null);
+
+        var match = Assert.Single(results);
+        Assert.Null(match.Id);
+        Assert.Null(match.TypeName);
+    }
+
     private static void WriteFlaxHeader(string filePath, byte[] magic, byte[] guidBytes, string typeName)
     {
         using var stream = File.Create(filePath);
