@@ -58,4 +58,12 @@ public sealed class EngineLocatorTests : IDisposable
 
         Assert.Contains(_tempDir, exception.Message);
     }
+
+    [Fact]
+    public void ResolveEditorExecutable_BuildsWin64PathForTheGivenConfig()
+    {
+        var path = EngineLocator.ResolveEditorExecutable(@"D:\Gry\Flax", "Development");
+
+        Assert.Equal(Path.Combine(@"D:\Gry\Flax", "Binaries", "Editor", "Win64", "Development", "FlaxEditor.exe"), path);
+    }
 }
