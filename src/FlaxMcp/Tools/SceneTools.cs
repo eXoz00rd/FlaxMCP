@@ -23,7 +23,8 @@ public sealed class SceneTools
     [Description("Lists scenes (.scene) and prefabs (.prefab) in the project's Content/ directory.")]
     public IReadOnlyList<FlaxContentAssetInfo> ListScenes()
     {
-        return [.. _index.Search(query: null, typeName: null, extension: ".scene"), .. _index.Search(query: null, typeName: null, extension: ".prefab")];
+        IReadOnlyList<FlaxContentAssetInfo> scenes = [.. _index.Search(query: null, typeName: null, extension: ".scene"), .. _index.Search(query: null, typeName: null, extension: ".prefab")];
+        return [.. scenes.Take(ResponseLimits.DefaultListTop)];
     }
 
     [McpServerTool(Name = "scene_outline", ReadOnly = true, UseStructuredContent = true)]

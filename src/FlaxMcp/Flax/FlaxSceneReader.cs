@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlaxMcp.Configuration;
 using FlaxMcp.Flax.Models;
@@ -121,8 +122,16 @@ public static class FlaxSceneReader
         }
 
         using var stream = File.OpenRead(filePath);
-        var document = JsonNode.Parse(stream) as JsonObject ??
-            throw new InvalidOperationException($"'{filePath}' is not a valid scene/prefab JSON document.");
+        JsonObject document;
+        try
+        {
+            document = JsonNode.Parse(stream) as JsonObject ??
+                throw new InvalidOperationException($"'{filePath}' is not a valid scene/prefab JSON document.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"'{filePath}' is not a valid scene/prefab JSON document.", ex);
+        }
 
         var rootId = TryGetString(document, "ID") ?? string.Empty;
         var engineBuild = TryGetInt(document, "EngineBuild");

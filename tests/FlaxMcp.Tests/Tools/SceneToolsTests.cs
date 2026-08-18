@@ -51,6 +51,27 @@ public sealed class SceneToolsTests : IDisposable
     }
 
     [Fact]
+    public void ListScenes_CapsCombinedSceneAndPrefabCountAtListTop()
+    {
+        var scenesDir = Path.Combine(_tempDir, "Content", "Scenes");
+        var prefabsDir = Path.Combine(_tempDir, "Content", "Prefabs");
+        Directory.CreateDirectory(prefabsDir);
+
+        for (var i = 0; i < ResponseLimits.DefaultListTop; i++)
+        {
+            File.WriteAllText(Path.Combine(scenesDir, $"Extra{i}.scene"), $$"""{ "ID": "s{{i}}", "TypeName": "FlaxEngine.SceneAsset", "Data": [] }""");
+        }
+        for (var i = 0; i < 10; i++)
+        {
+            File.WriteAllText(Path.Combine(prefabsDir, $"Extra{i}.prefab"), $$"""{ "ID": "p{{i}}", "TypeName": "FlaxEngine.Prefab", "Data": [] }""");
+        }
+
+        var scenes = _tool.ListScenes();
+
+        Assert.Equal(ResponseLimits.DefaultListTop, scenes.Count);
+    }
+
+    [Fact]
     public void GetSceneOutline_ReturnsActorTree()
     {
         var outline = _tool.GetSceneOutline("Scenes/Main.scene");

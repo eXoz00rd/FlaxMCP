@@ -167,6 +167,15 @@ public sealed class FlaxSceneReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadOutline_WithMalformedJson_ThrowsInvalidOperationException()
+    {
+        var path = Path.Combine(_tempDir, "Malformed.scene");
+        File.WriteAllText(path, "{ not valid json");
+
+        Assert.Throws<InvalidOperationException>(() => FlaxSceneReader.ReadOutline(path));
+    }
+
+    [Fact]
     public void FindActors_FiltersByPartialNameAndExactTypeName()
     {
         var path = WriteScene(
