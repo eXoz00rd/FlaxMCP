@@ -1,4 +1,5 @@
 using FlaxMcp.Configuration;
+using FlaxMcp.Flax;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ builder.Logging.SetMinimumLevel(
 );
 
 builder.Services.AddSingleton<IValidateOptions<FlaxMcpOptions>, FlaxMcpOptionsValidator>();
+builder.Services.AddSingleton<FlaxContentIndex>();
 builder.Services
        .AddOptions<FlaxMcpOptions>()
        .Configure(options => options.LoadFromEnvironment())
