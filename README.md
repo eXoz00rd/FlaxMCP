@@ -133,8 +133,14 @@ CI runs the same steps on every push and pull request.
 
 FlaxMCP is being built in phases: project/content/scene introspection from files, engine build and
 log tooling, then a live editor bridge (an `EditorPlugin` talking over a local named pipe) for
-scene graph, selection, screenshots, and play mode. See the commit history and open pull requests
-for current progress.
+scene graph, selection, screenshots, and play mode. See the [project board](https://github.com/users/eXoz00rd/projects/3)
+for the current backlog.
+
+## Contributing
+
+- **[Contributing Guide](CONTRIBUTING.md)** — branch flow, commits, code style, CI
+- **[Task Conventions](CONVENTIONS.md)** — writing issues and definitions of done
+- **[Agent Instructions](AGENTS.md)** — single source of truth for AI tools working on this repo
 
 ## License
 
