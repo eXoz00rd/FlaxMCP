@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using FlaxMcp.Flax.Models;
 
 namespace FlaxMcp.Flax;
@@ -31,14 +30,13 @@ public static class FlaxProcessRunner
         }
 
         using var process = new Process { StartInfo = startInfo };
-        var standardOutput = new StringBuilder();
-        var standardError = new StringBuilder();
-        process.OutputDataReceived += (_, args) => { if (args.Data is not null) { standardOutput.AppendLine(args.Data); } };
-        process.ErrorDataReceived += (_, args) => { if (args.Data is not null) { standardError.AppendLine(args.Data); } };
-
         process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
+
+        // Read the redirected streams directly rather than via OutputDataReceived/BeginOutputReadLine:
+        // WaitForExitAsync completing doesn't guarantee those event callbacks have finished draining
+        // buffered output, which can silently drop the tail of a fast-exiting process's output.
+        var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+        var standardErrorTask = process.StandardError.ReadToEndAsync();
 
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -46,12 +44,12 @@ public static class FlaxProcessRunner
         try
         {
             await process.WaitForExitAsync(linkedCts.Token);
-            return new FlaxProcessResult(process.ExitCode, TimedOut: false, standardOutput.ToString(), standardError.ToString());
+            return new FlaxProcessResult(process.ExitCode, TimedOut: false, await standardOutputTask, await standardErrorTask);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             KillIfRunning(process);
-            return new FlaxProcessResult(ExitCode: null, TimedOut: true, standardOutput.ToString(), standardError.ToString());
+            return new FlaxProcessResult(ExitCode: null, TimedOut: true, await standardOutputTask, await standardErrorTask);
         }
         catch (OperationCanceledException)
         {

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using FlaxMcp.Flax;
 using Xunit;
 
@@ -6,6 +5,10 @@ namespace FlaxMcp.Tests.Flax;
 
 public sealed class FlaxEditorSessionGuardTests : IDisposable
 {
+    // Overwhelmingly unlikely to be a real, running process ID on any supported platform -- used to
+    // exercise the stale-handshake path deterministically, without spawning and waiting on a real process.
+    private const int DefinitelyDeadPid = 999_999_999;
+
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "FlaxMcpTests_" + Guid.NewGuid().ToString("N"));
     private readonly FlaxEditorSessionGuard _guard;
 
@@ -63,9 +66,8 @@ public sealed class FlaxEditorSessionGuardTests : IDisposable
     [Fact]
     public void Acquire_WithStaleHandshakeFromADeadProcess_TreatsItAsAvailableAndSucceeds()
     {
-        var deadPid = StartAndWaitForExit();
         var handshakePath = Path.Combine(_tempDir, ProjectHash(@"D:\SomeProject") + ".json");
-        File.WriteAllText(handshakePath, $$"""{"pid":{{deadPid}},"projectFolder":"D:\\SomeProject","startedUtc":"2020-01-01T00:00:00Z"}""");
+        File.WriteAllText(handshakePath, $$"""{"pid":{{DefinitelyDeadPid}},"projectFolder":"D:\\SomeProject","startedUtc":"2020-01-01T00:00:00Z"}""");
 
         using var lease = _guard.Acquire(@"D:\SomeProject");
 
@@ -81,14 +83,6 @@ public sealed class FlaxEditorSessionGuardTests : IDisposable
         using var lease = _guard.Acquire(@"D:\SomeProject");
 
         Assert.NotNull(lease);
-    }
-
-    private static int StartAndWaitForExit()
-    {
-        var (fileName, arguments) = OperatingSystem.IsWindows() ? ("cmd.exe", "/c exit 0") : ("/bin/sh", "-c \"exit 0\"");
-        using var process = Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = false })!;
-        process.WaitForExit();
-        return process.Id;
     }
 
     private static string ProjectHash(string projectFolder)

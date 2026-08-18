@@ -31,20 +31,34 @@ public sealed class FlaxEditorSessionGuard
     {
         Directory.CreateDirectory(_sessionsDirectory);
         var handshakePath = Path.Combine(_sessionsDirectory, Hash(projectFolder) + ".json");
+        var payload = JsonSerializer.SerializeToUtf8Bytes(
+            new { pid = Environment.ProcessId, projectFolder, startedUtc = DateTime.UtcNow }
+        );
 
-        if (TryReadLiveSession(handshakePath, out var pid, out var startedUtc))
+        // FileMode.CreateNew is the atomic check-and-create: it fails if the file already exists, so
+        // two concurrent Acquire calls can't both observe "no live session" and both proceed.
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            throw new InvalidOperationException(
-                $"'{projectFolder}' already has a live Flax Editor session (pid {pid}, started {startedUtc:O} UTC). " +
-                "Close it, or wait for it to finish, before launching another headless run."
-            );
+            try
+            {
+                using var stream = new FileStream(handshakePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                stream.Write(payload);
+                return new FlaxEditorSessionLease(handshakePath);
+            }
+            catch (IOException) when (File.Exists(handshakePath))
+            {
+                if (TryReadLiveSession(handshakePath, out var pid, out var startedUtc))
+                {
+                    throw new InvalidOperationException(
+                        $"'{projectFolder}' already has a live Flax Editor session (pid {pid}, started {startedUtc:O} UTC). " +
+                        "Close it, or wait for it to finish, before launching another headless run."
+                    );
+                }
+                // TryReadLiveSession already deleted the stale file; retry the atomic create once more.
+            }
         }
 
-        File.WriteAllText(
-            handshakePath,
-            JsonSerializer.Serialize(new { pid = Environment.ProcessId, projectFolder, startedUtc = DateTime.UtcNow })
-        );
-        return new FlaxEditorSessionLease(handshakePath);
+        throw new InvalidOperationException($"Could not acquire a headless session lock for '{projectFolder}': lost a race with another acquirer.");
     }
 
     private static bool TryReadLiveSession(string handshakePath, out int pid, out DateTime startedUtc)
@@ -64,7 +78,7 @@ public sealed class FlaxEditorSessionGuard
             pid = root.GetProperty("pid").GetInt32();
             startedUtc = root.TryGetProperty("startedUtc", out var started) ? started.GetDateTime() : DateTime.UtcNow;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or KeyNotFoundException or FormatException)
+        catch (Exception ex) when (ex is JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException)
         {
             // Unreadable/malformed handshake file, most likely left over from a crash. Treat as stale.
             TryDelete(handshakePath);
