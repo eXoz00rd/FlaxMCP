@@ -89,4 +89,15 @@ public sealed class FlaxMcpOptionsTests : IDisposable
 
         Assert.Throws<InvalidOperationException>(() => options.ResolveProjectFile());
     }
+
+    [Fact]
+    public void ResolveContentDirectory_ReturnsContentSubfolderOfProject()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "Game.flaxproj"), "{}");
+        var options = new FlaxMcpOptions { ProjectPath = _tempDir };
+
+        var resolved = options.ResolveContentDirectory();
+
+        Assert.Equal(Path.Combine(Path.GetFullPath(_tempDir), "Content"), resolved);
+    }
 }

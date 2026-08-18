@@ -79,6 +79,15 @@ public sealed class FlaxMcpOptions
         };
     }
 
+    /// <summary>
+    /// Resolves the project's <c>Content/</c> directory from <see cref="ResolveProjectFile"/>.
+    /// </summary>
+    public string ResolveContentDirectory()
+    {
+        var projectFile = ResolveProjectFile();
+        return Path.Combine(Path.GetDirectoryName(projectFile)!, "Content");
+    }
+
     private static bool ParseBoolean(string? value)
     {
         return !string.IsNullOrWhiteSpace(value) &&

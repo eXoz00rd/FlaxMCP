@@ -54,8 +54,7 @@ public sealed class FlaxContentIndex
 
     private (IReadOnlyList<FlaxContentAssetInfo>, IReadOnlyDictionary<string, FlaxContentAssetInfo>) BuildIndex()
     {
-        var projectFile = _options.Value.ResolveProjectFile();
-        var contentDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, "Content");
+        var contentDirectory = _options.Value.ResolveContentDirectory();
 
         if (!Directory.Exists(contentDirectory))
         {
