@@ -51,6 +51,30 @@ public sealed class FlaxProcessRunnerTests
         );
     }
 
+    [Fact]
+    public async Task DrainAsync_WhenAStreamNeverReachesEof_ReturnsWithinTheGracePeriodInstead()
+    {
+        // Simulates a descendant process outliving Process.Kill and keeping a duplicated pipe handle
+        // open (FlaxEditor.exe's build step spawns "dotnet exec csc.dll" as a child) -- ReadToEndAsync
+        // on that stream would otherwise never see EOF and hang indefinitely.
+        var stuckStandardOutput = new TaskCompletionSource<string>().Task;
+        var completedStandardError = Task.FromResult("captured before the hang");
+
+        var (standardOutput, standardError) = await FlaxProcessRunner.DrainAsync(stuckStandardOutput, completedStandardError);
+
+        Assert.Equal(string.Empty, standardOutput);
+        Assert.Equal("captured before the hang", standardError);
+    }
+
+    [Fact]
+    public async Task DrainAsync_WhenBothStreamsCompletePromptly_ReturnsTheirContent()
+    {
+        var (standardOutput, standardError) = await FlaxProcessRunner.DrainAsync(Task.FromResult("out"), Task.FromResult("err"));
+
+        Assert.Equal("out", standardOutput);
+        Assert.Equal("err", standardError);
+    }
+
     private static (string FileName, string[] Arguments) ShellCommand(string command)
     {
         return OperatingSystem.IsWindows() ? ("cmd.exe", ["/c", command]) : ("/bin/sh", ["-c", command]);

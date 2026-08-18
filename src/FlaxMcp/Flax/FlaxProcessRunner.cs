@@ -10,6 +10,13 @@ namespace FlaxMcp.Flax;
 /// </summary>
 public static class FlaxProcessRunner
 {
+    // Bounds how long RunAsync waits for the redirected pipes to reach EOF after the process exits
+    // or is killed. FlaxEditor.exe's own build step spawns descendants (e.g. "dotnet exec csc.dll"),
+    // and if one outlives entireProcessTree's kill and keeps a duplicated pipe handle open, plain
+    // ReadToEndAsync would never see EOF -- this grace period keeps that from becoming an indefinite
+    // hang, at the cost of possibly truncated output in that rare case.
+    private static readonly TimeSpan DrainGracePeriod = TimeSpan.FromSeconds(5);
+
     public static async Task<FlaxProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -44,18 +51,33 @@ public static class FlaxProcessRunner
         try
         {
             await process.WaitForExitAsync(linkedCts.Token);
-            return new FlaxProcessResult(process.ExitCode, TimedOut: false, await standardOutputTask, await standardErrorTask);
+            var (standardOutput, standardError) = await DrainAsync(standardOutputTask, standardErrorTask);
+            return new FlaxProcessResult(process.ExitCode, TimedOut: false, standardOutput, standardError);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             KillIfRunning(process);
-            return new FlaxProcessResult(ExitCode: null, TimedOut: true, await standardOutputTask, await standardErrorTask);
+            var (standardOutput, standardError) = await DrainAsync(standardOutputTask, standardErrorTask);
+            return new FlaxProcessResult(ExitCode: null, TimedOut: true, standardOutput, standardError);
         }
         catch (OperationCanceledException)
         {
             KillIfRunning(process);
             throw;
         }
+    }
+
+    internal static async Task<(string StandardOutput, string StandardError)> DrainAsync(Task<string> standardOutputTask, Task<string> standardErrorTask)
+    {
+        var both = Task.WhenAll(standardOutputTask, standardErrorTask);
+        if (await Task.WhenAny(both, Task.Delay(DrainGracePeriod)) != both)
+        {
+            return (
+                standardOutputTask.IsCompletedSuccessfully ? standardOutputTask.Result : string.Empty,
+                standardErrorTask.IsCompletedSuccessfully ? standardErrorTask.Result : string.Empty
+            );
+        }
+        return (standardOutputTask.Result, standardErrorTask.Result);
     }
 
     private static void KillIfRunning(Process process)
