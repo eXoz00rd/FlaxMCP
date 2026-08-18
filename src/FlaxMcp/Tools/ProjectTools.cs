@@ -24,4 +24,27 @@ public sealed class ProjectTools
         var projectFile = _options.Value.ResolveProjectFile();
         return FlaxProjectReader.Read(projectFile);
     }
+
+    [McpServerTool(Name = "project_targets", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Parses the GameTarget/EditorTarget *.Build.cs files referenced from the .flaxproj: target class names and referenced modules.")]
+    public FlaxProjectTargetsInfo GetProjectTargets()
+    {
+        var projectFile = _options.Value.ResolveProjectFile();
+        var projectInfo = FlaxProjectReader.Read(projectFile);
+        var sourceDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, "Source");
+
+        return new FlaxProjectTargetsInfo(
+            GameTarget: FlaxBuildTargetReader.Read(Path.Combine(sourceDirectory, projectInfo.GameTarget + ".Build.cs")),
+            EditorTarget: FlaxBuildTargetReader.Read(Path.Combine(sourceDirectory, projectInfo.EditorTarget + ".Build.cs"))
+        );
+    }
+
+    [McpServerTool(Name = "project_settings", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Reads Content/*.json and Content/Settings/*.json settings assets (Game, Graphics, Input, Physics, ...) as structured JSON.")]
+    public IReadOnlyList<FlaxSettingsFile> GetProjectSettings()
+    {
+        var projectFile = _options.Value.ResolveProjectFile();
+        var projectDirectory = Path.GetDirectoryName(projectFile)!;
+        return FlaxProjectSettingsReader.ReadAll(projectDirectory);
+    }
 }
