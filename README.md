@@ -19,19 +19,24 @@ those tools can't see: Flax project structure, content, scenes, engine builds, a
 
 ## Tools
 
-4 tools across 2 areas (more land as later phases of the project ship):
+7 tools across 3 areas (more land as later phases of the project ship):
 
 | Area | Tools |
 |---|---|
 | Server | `server_info` |
 | Project | `project_info`, `project_targets`, `project_settings` |
+| Content | `content_search`, `content_asset_info`, `content_resolve_guid` |
 
 `server_info` reports the server name and version. `project_info` reads the `.flaxproj` file
 directly: name, version, build targets, referenced projects (including the engine and any
 plugins), and the default scene. `project_targets` parses the `GameTarget`/`EditorTarget`
 `*.Build.cs` files referenced from the `.flaxproj` for their class names and referenced modules.
 `project_settings` reads the `Content/*.json` and `Content/Settings/*.json` settings assets
-(Game, Graphics, Input, Physics, ...) as structured JSON.
+(Game, Graphics, Input, Physics, ...) as structured JSON. `content_search`/`content_asset_info`/
+`content_resolve_guid` are backed by an in-memory index of every file under `Content/`: JSON-based
+assets (`.json`/`.scene`/`.prefab`) are parsed for their `ID`/`TypeName`, and binary `.flax` assets
+are read via a reverse-engineered header format (verified against Flax 1.12) — an asset whose format
+isn't recognized still shows up in `content_search` by path, just with a null `Id`/`TypeName`.
 
 ### Trimming the tool list
 
