@@ -17,6 +17,9 @@ builder.Logging.SetMinimumLevel(
 
 builder.Services.AddSingleton<IValidateOptions<FlaxMcpOptions>, FlaxMcpOptionsValidator>();
 builder.Services.AddSingleton<FlaxContentIndex>();
+builder.Services.AddSingleton<FlaxEditorSessionGuard>();
+builder.Services.AddSingleton<FlaxHeadlessEditorRunner>();
+builder.Services.AddSingleton<FlaxBuildJobManager>();
 builder.Services
        .AddOptions<FlaxMcpOptions>()
        .Configure(options => options.LoadFromEnvironment())
