@@ -77,6 +77,17 @@ public sealed class ProjectToolsTests : IDisposable
     }
 
     [Fact]
+    public void GetProjectTargets_WithMissingTargetNames_ThrowsClearError()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "Game.flaxproj"), """{ "Name": "Game" }""");
+        var tool = new ProjectTools(Options.Create(new FlaxMcpOptions { ProjectPath = _tempDir }));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => tool.GetProjectTargets());
+        Assert.Contains("GameTarget", exception.Message);
+        Assert.Contains("EditorTarget", exception.Message);
+    }
+
+    [Fact]
     public void GetProjectSettings_ReadsSettingsFromContentDirectory()
     {
         File.WriteAllText(Path.Combine(_tempDir, "Game.flaxproj"), """{ "Name": "Game" }""");

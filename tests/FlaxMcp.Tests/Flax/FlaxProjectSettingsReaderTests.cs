@@ -79,4 +79,43 @@ public sealed class FlaxProjectSettingsReaderTests : IDisposable
 
         Assert.Empty(settings);
     }
+
+    [Fact]
+    public void ReadAll_SkipsNonSettingsJsonAssetsWithADataProperty()
+    {
+        var contentDir = Path.Combine(_tempDir, "Content");
+        Directory.CreateDirectory(contentDir);
+        File.WriteAllText(
+            Path.Combine(contentDir, "SomeMaterial.json"),
+            """
+            {
+                "ID": "11111111111111111111111111111111",
+                "TypeName": "FlaxEngine.Material",
+                "EngineBuild": 6910,
+                "Data": { "Foo": "Bar" }
+            }
+            """
+        );
+
+        var settings = FlaxProjectSettingsReader.ReadAll(_tempDir);
+
+        Assert.Empty(settings);
+    }
+
+    [Fact]
+    public void ReadAll_SkipsFilesLockedByAnotherProcess()
+    {
+        var contentDir = Path.Combine(_tempDir, "Content");
+        Directory.CreateDirectory(contentDir);
+        var lockedFile = Path.Combine(contentDir, "GameSettings.json");
+        File.WriteAllText(
+            lockedFile,
+            """{ "TypeName": "FlaxEditor.Content.Settings.GameSettings", "Data": {} }"""
+        );
+
+        using var lockStream = new FileStream(lockedFile, FileMode.Open, FileAccess.Read, FileShare.None);
+        var settings = FlaxProjectSettingsReader.ReadAll(_tempDir);
+
+        Assert.Empty(settings);
+    }
 }

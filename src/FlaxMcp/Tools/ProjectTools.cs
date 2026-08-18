@@ -31,6 +31,12 @@ public sealed class ProjectTools
     {
         var projectFile = _options.Value.ResolveProjectFile();
         var projectInfo = FlaxProjectReader.Read(projectFile);
+
+        if (string.IsNullOrWhiteSpace(projectInfo.GameTarget) || string.IsNullOrWhiteSpace(projectInfo.EditorTarget))
+        {
+            throw new InvalidOperationException($"'{projectFile}' does not define both GameTarget and EditorTarget.");
+        }
+
         var sourceDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, "Source");
 
         return new FlaxProjectTargetsInfo(

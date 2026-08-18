@@ -6,6 +6,8 @@ namespace FlaxMcp.Flax;
 
 public static class FlaxProjectSettingsReader
 {
+    private const string SettingsTypeNamePrefix = "FlaxEditor.Content.Settings.";
+
     public static IReadOnlyList<FlaxSettingsFile> ReadAll(string projectDirectory)
     {
         var contentDirectory = Path.Combine(projectDirectory, "Content");
@@ -43,19 +45,20 @@ public static class FlaxProjectSettingsReader
             using var stream = File.OpenRead(filePath);
             document = JsonNode.Parse(stream) as JsonObject;
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return false;
         }
 
-        if (document?["Data"] is null)
+        var typeName = document?["TypeName"]?.GetValue<string>();
+        if (typeName is null || !typeName.StartsWith(SettingsTypeNamePrefix, StringComparison.Ordinal) || document?["Data"] is null)
         {
             return false;
         }
 
         settingsFile = new FlaxSettingsFile(
             Name: Path.GetFileNameWithoutExtension(filePath),
-            TypeName: document["TypeName"]?.GetValue<string>() ?? string.Empty,
+            TypeName: typeName,
             Data: document["Data"]
         );
         return true;
