@@ -58,6 +58,19 @@ public sealed class FlaxCompilerDiagnosticParserTests
     }
 
     [Fact]
+    public void Parse_WithAParenthesizedPathSegment_StillFindsTheRealPositionMarker()
+    {
+        // "Program Files (x86)" is a common real-world Windows path segment. A file-path capture that
+        // naively excludes '(' and ')' stops at the wrong parenthesis and fails to parse the diagnostic.
+        var diagnostics = FlaxCompilerDiagnosticParser.Parse(@"C:\Program Files (x86)\Game\Source\Foo.cs(3,7): error CS1002: ; expected");
+
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal(@"C:\Program Files (x86)\Game\Source\Foo.cs", diagnostic.File);
+        Assert.Equal(3, diagnostic.Line);
+        Assert.Equal(7, diagnostic.Column);
+    }
+
+    [Fact]
     public void Parse_WithATrailingNulByteInsteadOfALineBreak_StripsItFromTheMessage()
     {
         // Observed against a real headless run: the engine occasionally terminates the log's last

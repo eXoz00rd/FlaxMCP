@@ -11,6 +11,9 @@ namespace FlaxMcp.Flax;
 /// <c>(line,column)</c> form some Roslyn tooling uses, so both are accepted. Also verified against a
 /// real run: a line's final diagnostic can be terminated by an embedded NUL byte instead of a normal
 /// line break (interleaved subprocess output in the log), which would otherwise leak into <see cref="FlaxCompilerDiagnostic.Message"/>.
+/// The file-path capture allows parentheses (e.g. <c>C:\Program Files (x86)\...</c>) rather than
+/// excluding them -- the required <c>\d+,\d+</c> right after the position-opening <c>(</c> is enough
+/// for backtracking to skip past a non-numeric parenthesized path segment and find the real one.
 /// </summary>
 public static partial class FlaxCompilerDiagnosticParser
 {
@@ -31,6 +34,6 @@ public static partial class FlaxCompilerDiagnosticParser
         ];
     }
 
-    [GeneratedRegex(@"(?<file>[A-Za-z]:[^()\r\n]+?)\((?<line>\d+),(?<column>\d+)(?:,\d+,\d+)?\):\s*(?<severity>error|warning)\s+(?<code>[A-Z]+\d+):\s*(?<message>[^\r\n]+)")]
+    [GeneratedRegex(@"(?<file>[A-Za-z]:[^\r\n]+?)\((?<line>\d+),(?<column>\d+)(?:,\d+,\d+)?\):\s*(?<severity>error|warning)\s+(?<code>[A-Z]+\d+):\s*(?<message>[^\r\n]+)")]
     private static partial Regex DiagnosticPattern();
 }

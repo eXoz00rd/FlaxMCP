@@ -39,7 +39,7 @@ public sealed class BuildTools
 
     [McpServerTool(Name = "build_clear_cache", ReadOnly = false, UseStructuredContent = true)]
     [Description("Runs FlaxEditor.exe -clearcache, and optionally -clearcooker too, to clear build caches.")]
-    public async Task<FlaxBuildOperationResult> ClearCache(bool alsoClearCooker, CancellationToken cancellationToken)
+    public async Task<FlaxBuildOperationResult> ClearCache(bool alsoClearCooker = false, CancellationToken cancellationToken = default)
     {
         List<string> arguments = alsoClearCooker ? ["-clearcache", "-clearcooker"] : ["-clearcache"];
         var result = await _runner.RunAsync(arguments, ShortOperationTimeout, cancellationToken);
@@ -50,7 +50,9 @@ public sealed class BuildTools
     [Description("Starts a game build (-build <preset>.<target>, e.g. preset 'Development', target 'Windows') in the background and returns a job id immediately -- a real build can take minutes. Poll with build_status and fetch the outcome with build_result once it's done.")]
     public string StartBuild(string preset, string target)
     {
-        return _jobs.Start(cancellationToken => _runner.RunAsync(["-build", $"{preset}.{target}"], BuildTimeout, cancellationToken));
+        return _jobs.Start(async cancellationToken =>
+            ToOperationResult(await _runner.RunAsync(["-build", $"{preset}.{target}"], BuildTimeout, cancellationToken))
+        );
     }
 
     [McpServerTool(Name = "build_status", ReadOnly = true, UseStructuredContent = true)]
@@ -64,7 +66,7 @@ public sealed class BuildTools
     [Description("Fetches a build_game job's outcome once build_status reports it's no longer running. Throws if the job is still running, unknown, or ended abnormally.")]
     public FlaxBuildOperationResult GetBuildResult(string jobId)
     {
-        return ToOperationResult(_jobs.GetResult(jobId));
+        return _jobs.GetResult(jobId);
     }
 
     internal static FlaxBuildOperationResult ToOperationResult(FlaxHeadlessRunResult result)
