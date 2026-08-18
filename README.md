@@ -19,13 +19,14 @@ those tools can't see: Flax project structure, content, scenes, engine builds, a
 
 ## Tools
 
-7 tools across 3 areas (more land as later phases of the project ship):
+10 tools across 4 areas (more land as later phases of the project ship):
 
 | Area | Tools |
 |---|---|
 | Server | `server_info` |
 | Project | `project_info`, `project_targets`, `project_settings` |
 | Content | `content_search`, `content_asset_info`, `content_resolve_guid` |
+| Scene | `scene_list`, `scene_outline`, `scene_find_actor` |
 
 `server_info` reports the server name and version. `project_info` reads the `.flaxproj` file
 directly: name, version, build targets, referenced projects (including the engine and any
@@ -37,6 +38,10 @@ plugins), and the default scene. `project_targets` parses the `GameTarget`/`Edit
 assets (`.json`/`.scene`/`.prefab`) are parsed for their `ID`/`TypeName`, and binary `.flax` assets
 are read via a reverse-engineered header format (verified against Flax 1.12) — an asset whose format
 isn't recognized still shows up in `content_search` by path, just with a null `Id`/`TypeName`.
+`scene_list` finds `.scene`/`.prefab` files; `scene_outline` reads one into an actor tree built from
+`ParentID` linkage (not file order), with scripts attached to an actor listed on that actor rather
+than shown as a nested child, and an explicit `Truncated` flag if the configured depth/node-count
+limit was hit; `scene_find_actor` searches a scene's actors by partial name and/or exact type.
 
 ### Trimming the tool list
 
@@ -111,7 +116,7 @@ etc.):
 | `FLAX_PROJECT_PATH` | yes | Path to a `.flaxproj` file, or a directory containing exactly one |
 | `FLAX_ENGINE_PATH` | no | Flax Engine install directory. Auto-detected via the Flax Launcher's `Versions.txt` when omitted |
 | `FLAX_EDITOR_CONFIG` | no | Editor build to use: `Development` (default), `Debug`, or `Release` |
-| `FLAX_TOOLSETS` | no | Comma-separated toolsets to expose: `project`. `server` is always available |
+| `FLAX_TOOLSETS` | no | Comma-separated toolsets to expose: `project`, `content`, `scene`. `server` is always available |
 | `FLAX_READ_ONLY` | no | Set to `true` to expose only read-only tools |
 | `FLAX_BRIDGE` | no | Reserved for the live-editor bridge (`auto` / `off`); not yet wired up |
 | `FLAX_ALLOW_CODE_EXECUTION` | no | Reserved for an arbitrary-C#-execution tool, off by default; not yet implemented |

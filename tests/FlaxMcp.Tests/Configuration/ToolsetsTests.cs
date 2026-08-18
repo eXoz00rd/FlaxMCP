@@ -38,9 +38,9 @@ public sealed class ToolsetsTests
     [Fact]
     public void Resolve_WithUnknownToolset_ThrowsListingValidNames()
     {
-        var exception = Assert.Throws<InvalidOperationException>(() => Toolsets.Resolve("project,scene"));
+        var exception = Assert.Throws<InvalidOperationException>(() => Toolsets.Resolve("project,bogus"));
 
-        Assert.Contains("scene", exception.Message);
+        Assert.Contains("bogus", exception.Message);
         Assert.Contains("project", exception.Message);
         Assert.Contains(FlaxMcpOptions.ToolsetsVariable, exception.Message);
     }

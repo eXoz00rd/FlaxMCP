@@ -11,6 +11,7 @@ public static class Toolsets
         [ServerToolset] = typeof(ServerInfoTool),
         ["project"] = typeof(ProjectTools),
         ["content"] = typeof(ContentTools),
+        ["scene"] = typeof(SceneTools),
     };
 
     public static IReadOnlyCollection<string> Names => Registry.Keys;
