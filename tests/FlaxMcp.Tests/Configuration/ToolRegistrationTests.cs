@@ -27,12 +27,25 @@ public sealed class ToolRegistrationTests
     [Fact]
     public void AddTools_WithReadOnly_OnlyRegistersReadOnlyTools()
     {
-        // No write tool exists yet (v1 only has server_info/project_info), so this can't yet prove
-        // exclusion — it guards against a future write tool leaking through the ReadOnly filter.
         var tools = Register(new FlaxMcpOptions { ReadOnly = true });
 
         Assert.NotEmpty(tools);
         Assert.All(tools, tool => Assert.True(tool.ProtocolTool.Annotations?.ReadOnlyHint));
+    }
+
+    [Fact]
+    public void AddTools_WithReadOnly_ExcludesWriteToolsButKeepsTheirReadOnlySiblings()
+    {
+        var names = Register(new FlaxMcpOptions { ReadOnly = true }).Select(tool => tool.ProtocolTool.Name).ToList();
+
+        Assert.DoesNotContain("build_generate_projects", names);
+        Assert.DoesNotContain("build_compile_scripts", names);
+        Assert.DoesNotContain("build_clear_cache", names);
+        Assert.DoesNotContain("build_game", names);
+        Assert.Contains("build_status", names);
+        Assert.Contains("build_result", names);
+        Assert.Contains("logs_tail", names);
+        Assert.Contains("logs_errors", names);
     }
 
     [Fact]
