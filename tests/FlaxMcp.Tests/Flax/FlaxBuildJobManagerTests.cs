@@ -76,22 +76,19 @@ public sealed class FlaxBuildJobManagerTests
     }
 
     [Fact]
-    public async Task Start_DoesNotRunTheDelegateOnTheCallingThread()
+    public async Task Start_WhenTheDelegateThrowsSynchronously_DoesNotThrowFromStartAndReportsAFailedJob()
     {
-        // Start dispatches via Task.Run so that even a synchronous prefix inside the delegate (path
-        // resolution, session-lock acquisition, Process.Start) never blocks the caller.
+        // Start dispatches via Task.Run, which captures even a throw from before the delegate's first
+        // await (e.g. the session lock already being held) into the returned Task's faulted state --
+        // so a synchronous failure surfaces as a normal failed job instead of escaping this call.
         var manager = new FlaxBuildJobManager();
-        var callingThreadId = Environment.CurrentManagedThreadId;
-        var observedThreadId = -1;
 
-        var jobId = manager.Start(_ =>
-        {
-            observedThreadId = Environment.CurrentManagedThreadId;
-            return Task.FromResult(new FlaxBuildOperationResult(true, 0, false, 0, []));
-        });
-
+        var jobId = manager.Start(_ => throw new InvalidOperationException("synchronous failure"));
         await WaitForCompletionAsync(manager, jobId);
-        Assert.NotEqual(callingThreadId, observedThreadId);
+
+        Assert.Equal("failed", manager.GetStatus(jobId));
+        var exception = Assert.Throws<InvalidOperationException>(() => manager.GetResult(jobId));
+        Assert.Contains("synchronous failure", exception.Message);
     }
 
     private static async Task WaitForCompletionAsync(FlaxBuildJobManager manager, string jobId)
