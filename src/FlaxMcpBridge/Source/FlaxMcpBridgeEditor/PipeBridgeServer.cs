@@ -219,6 +219,7 @@ internal sealed class PipeBridgeServer : IDisposable
             pipeName = PipeName,
             pid = Environment.ProcessId,
             projectFolder = _projectFolder,
+            pluginVersion = typeof(PipeBridgeServer).Assembly.GetName().Version?.ToString() ?? "0.0.0",
             engineBuild = Globals.EngineBuildNumber,
             startedUtc = DateTime.UtcNow,
         };
@@ -227,7 +228,8 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static string Hash(string value)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.ToLowerInvariant()));
+        var normalized = value.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(bytes)[..16];
     }
 

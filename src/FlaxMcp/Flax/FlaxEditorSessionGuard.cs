@@ -19,8 +19,12 @@ public sealed class FlaxEditorSessionGuard
 
     public FlaxEditorSessionGuard(string? sessionsDirectory = null)
     {
-        _sessionsDirectory = sessionsDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FlaxMcp", "sessions");
+        _sessionsDirectory = sessionsDirectory ??
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "FlaxMcp",
+                "sessions"
+            );
     }
 
     /// <summary>
@@ -58,7 +62,9 @@ public sealed class FlaxEditorSessionGuard
             }
         }
 
-        throw new InvalidOperationException($"Could not acquire a headless session lock for '{projectFolder}': lost a race with another acquirer.");
+        throw new InvalidOperationException(
+            $"Could not acquire a headless session lock for '{projectFolder}': lost a race with another acquirer."
+        );
     }
 
     private static bool TryReadLiveSession(string handshakePath, out int pid, out DateTime startedUtc)
@@ -76,9 +82,15 @@ public sealed class FlaxEditorSessionGuard
             using var document = JsonDocument.Parse(File.ReadAllText(handshakePath));
             var root = document.RootElement;
             pid = root.GetProperty("pid").GetInt32();
-            startedUtc = root.TryGetProperty("startedUtc", out var started) ? started.GetDateTime() : DateTime.UtcNow;
+            startedUtc = root.TryGetProperty("startedUtc", out var started) ?
+                started.GetDateTime() :
+                DateTime.UtcNow;
         }
-        catch (Exception ex) when (ex is JsonException or IOException or KeyNotFoundException or FormatException or InvalidOperationException)
+        catch (Exception ex) when (ex is JsonException
+                                       or IOException
+                                       or KeyNotFoundException
+                                       or FormatException
+                                       or InvalidOperationException)
         {
             // Unreadable/malformed handshake file, most likely left over from a crash. Treat as stale.
             TryDelete(handshakePath);
@@ -121,7 +133,8 @@ public sealed class FlaxEditorSessionGuard
 
     private static string Hash(string value)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.ToLowerInvariant()));
+        var normalized = value.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(bytes)[..16];
     }
 }

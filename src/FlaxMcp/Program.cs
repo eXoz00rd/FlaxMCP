@@ -10,7 +10,11 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Logging.SetMinimumLevel(
-    Enum.TryParse<LogLevel>(Environment.GetEnvironmentVariable(FlaxMcpOptions.LogLevelVariable), true, out var minimumLevel) ?
+    Enum.TryParse<LogLevel>(
+        Environment.GetEnvironmentVariable(FlaxMcpOptions.LogLevelVariable),
+        true,
+        out var minimumLevel
+    ) ?
         minimumLevel :
         LogLevel.Warning
 );
@@ -18,6 +22,7 @@ builder.Logging.SetMinimumLevel(
 builder.Services.AddSingleton<IValidateOptions<FlaxMcpOptions>, FlaxMcpOptionsValidator>();
 builder.Services.AddSingleton<FlaxContentIndex>();
 builder.Services.AddSingleton<FlaxEditorSessionGuard>();
+builder.Services.AddSingleton<IFlaxBridgeClient, FlaxBridgeClient>();
 builder.Services.AddSingleton<FlaxHeadlessEditorRunner>();
 builder.Services.AddSingleton<FlaxBuildJobManager>();
 builder.Services
