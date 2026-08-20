@@ -14,12 +14,13 @@ using FlaxEditor.Windows;
 namespace FlaxMcpBridge.Editor;
 
 /// <summary>
-/// Spike bridge transport: a single named pipe accepting one client connection at a time,
-/// exchanging newline-delimited JSON messages. Intentionally minimal — Phase 4 replaces this
-/// with a hardened dispatcher (protocol versioning, reconnect, per-request timeouts).
+/// Named-pipe bridge transport accepting one client connection at a time and exchanging
+/// newline-delimited JSON messages.
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
+    private const int ProtocolVersion = 1;
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private readonly string _projectFolder;
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptLoop;
@@ -86,11 +87,30 @@ internal sealed class PipeBridgeServer : IDisposable
             string responseJson;
             try
             {
-                responseJson = await DispatchAsync(line);
+                using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                requestTimeout.CancelAfter(RequestTimeout);
+                var dispatchTask = DispatchAsync(line);
+                try
+                {
+                    responseJson = await dispatchTask.WaitAsync(requestTimeout.Token);
+                }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                {
+                    ObserveFault(dispatchTask);
+                    throw;
+                }
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                responseJson = SerializeError(
+                    ReadRequestId(line),
+                    "request_timeout",
+                    $"The editor action did not complete within {RequestTimeout.TotalSeconds:0} seconds."
+                );
             }
             catch (Exception ex)
             {
-                responseJson = JsonSerializer.Serialize(new { error = ex.Message });
+                responseJson = SerializeError(ReadRequestId(line), "request_failed", ex.Message);
             }
 
             await writer.WriteLineAsync(responseJson);
@@ -102,7 +122,27 @@ internal sealed class PipeBridgeServer : IDisposable
     {
         using var document = JsonDocument.Parse(requestJson);
         var root = document.RootElement;
-        var id = root.TryGetProperty("id", out var idElement) ? idElement.GetInt32() : 0;
+        var id = 0;
+        if (root.TryGetProperty("id", out var idElement) && !idElement.TryGetInt32(out id))
+        {
+            return SerializeError(0, "invalid_request", "Request id must be a 32-bit integer.");
+        }
+
+        var protocolVersion = 0;
+        if (root.TryGetProperty("protocolVersion", out var versionElement) &&
+            !versionElement.TryGetInt32(out protocolVersion))
+        {
+            return SerializeError(id, "invalid_request", "Protocol version must be a 32-bit integer.");
+        }
+
+        if (protocolVersion != ProtocolVersion)
+        {
+            return SerializeError(
+                id,
+                "protocol_mismatch",
+                $"The editor plugin requires protocol version {ProtocolVersion}, but the client sent version {protocolVersion}."
+            );
+        }
         var method = root.GetProperty("method").GetString() ?? string.Empty;
 
         object result = method switch
@@ -114,6 +154,36 @@ internal sealed class PipeBridgeServer : IDisposable
         };
 
         return JsonSerializer.Serialize(new { id, result });
+    }
+
+    private static string SerializeError(int id, string code, string message)
+    {
+        return JsonSerializer.Serialize(new { id, error = new { code, message } });
+    }
+
+    private static void ObserveFault(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask => _ = completedTask.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    private static int ReadRequestId(string requestJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(requestJson);
+            return document.RootElement.TryGetProperty("id", out var id) && id.TryGetInt32(out var value) ?
+                value :
+                0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 
     private static string RequireParam(JsonElement root, string name)
@@ -217,6 +287,7 @@ internal sealed class PipeBridgeServer : IDisposable
         var handshake = new
         {
             pipeName = PipeName,
+            protocolVersion = ProtocolVersion,
             pid = Environment.ProcessId,
             projectFolder = _projectFolder,
             pluginVersion = typeof(PipeBridgeServer).Assembly.GetName().Version?.ToString() ?? "0.0.0",

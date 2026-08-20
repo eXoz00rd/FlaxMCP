@@ -58,7 +58,16 @@ public sealed class FlaxBridgeClientTests : IDisposable
         var status = await client.GetStatusAsync(TestContext.Current.CancellationToken);
         await serverTask;
 
-        Assert.Equal(new FlaxBridgeStatus(true, "1.2.3", 12000, startedUtc), status);
+        Assert.Equal(
+            new FlaxBridgeStatus(
+                true,
+                "1.2.3",
+                12000,
+                startedUtc,
+                null
+            ),
+            status
+        );
     }
 
     [Fact]
@@ -73,7 +82,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
     }
 
     [Theory]
-    [InlineData("{\"id\":1,\"error\":\"Editor action failed\"}")]
+    [InlineData("{\"id\":1,\"error\":{\"code\":\"action_failed\",\"message\":\"Editor action failed\"}}")]
     [InlineData("{\"id\":1}")]
     public async Task GetStatusAsync_WithInvalidBridgeResponse_ReturnsDisconnected(string response)
     {
@@ -86,6 +95,75 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await serverTask;
 
         Assert.Equal(FlaxBridgeStatus.Disconnected, status);
+    }
+
+    [Fact]
+    public async Task PingAsync_WithMismatchedProtocol_ReportsVersions()
+    {
+        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 2);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var exception =
+            await Assert.ThrowsAnyAsync<InvalidOperationException>(()
+                => client.PingAsync(TestContext.Current.CancellationToken)
+            );
+
+        Assert.Contains("server requires version 1", exception.Message);
+        Assert.Contains("plugin reports version 2", exception.Message);
+    }
+
+    [Fact]
+    public async Task PingAsync_WithStructuredError_ReportsCodeAndMessage()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"error\":{\"code\":\"action_failed\",\"message\":\"Editor action failed\"}}",
+            TestContext.Current.CancellationToken
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var exception =
+            await Assert.ThrowsAsync<InvalidOperationException>(()
+                => client.PingAsync(TestContext.Current.CancellationToken)
+            );
+        await serverTask;
+
+        Assert.Contains("[action_failed]: Editor action failed", exception.Message);
+    }
+
+    [Fact]
+    public async Task PingAsync_AfterHandshakeChanges_ConnectsToNewSession()
+    {
+        WriteHandshake("stale-" + Guid.NewGuid().ToString("N"), DateTime.UtcNow);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        await Assert.ThrowsAnyAsync<Exception>(() => client.PingAsync(TestContext.Current.CancellationToken));
+
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServePingAsync(pipeName, TestContext.Current.CancellationToken);
+
+        var ping = await client.PingAsync(TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.True(ping.Pong);
+    }
+
+    [Fact]
+    public async Task PingAsync_WhenBridgeDisconnects_ReportsClearError()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeDisconnectAsync(pipeName, TestContext.Current.CancellationToken);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var exception =
+            await Assert.ThrowsAsync<IOException>(() => client.PingAsync(TestContext.Current.CancellationToken)
+            );
+        await serverTask;
+
+        Assert.Contains("disconnected before returning a response", exception.Message);
     }
 
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
@@ -127,7 +205,27 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await writer.WriteLineAsync(response);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc)
+    private static async Task ServeDisconnectAsync(string pipeName, CancellationToken cancellationToken)
+    {
+        await using var pipe = new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous
+        );
+        await pipe.WaitForConnectionAsync(cancellationToken);
+        using var reader = new StreamReader(
+            pipe,
+            Encoding.UTF8,
+            false,
+            4096,
+            leaveOpen: true
+        );
+        await reader.ReadLineAsync(cancellationToken);
+    }
+
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 1)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(
@@ -136,6 +234,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 new
                 {
                     pipeName,
+                    protocolVersion,
                     pluginVersion = "1.2.3",
                     engineBuild = 12000,
                     startedUtc,

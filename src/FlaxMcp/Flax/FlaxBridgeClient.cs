@@ -19,7 +19,9 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
+    internal const int CurrentProtocolVersion = 1;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly string _projectFolder;
     private readonly string _sessionsDirectory;
@@ -40,7 +42,7 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
 
     public async Task<FlaxBridgeStatus> GetStatusAsync(CancellationToken cancellationToken = default)
     {
-        FlaxBridgeHandshake? handshake;
+        FlaxBridgeHandshake? handshake = null;
         try
         {
             handshake = ReadHandshake();
@@ -49,11 +51,22 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
                 return FlaxBridgeStatus.Disconnected;
             }
 
+            ValidateProtocol(handshake);
             await PingAsync(handshake, cancellationToken);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return FlaxBridgeStatus.Disconnected;
+        }
+        catch (FlaxBridgeProtocolException ex)
+        {
+            return new FlaxBridgeStatus(
+                false,
+                handshake?.PluginVersion,
+                handshake?.EngineBuild,
+                handshake?.StartedUtc,
+                ex.Message
+            );
         }
         catch (Exception ex) when (ex is IOException
                                        or JsonException
@@ -64,7 +77,13 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             return FlaxBridgeStatus.Disconnected;
         }
 
-        return new FlaxBridgeStatus(true, handshake.PluginVersion, handshake.EngineBuild, handshake.StartedUtc);
+        return new FlaxBridgeStatus(
+            true,
+            handshake.PluginVersion,
+            handshake.EngineBuild,
+            handshake.StartedUtc,
+            null
+        );
     }
 
     public Task<FlaxBridgePing> PingAsync(CancellationToken cancellationToken = default)
@@ -99,12 +118,15 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             PipeDirection.InOut,
             PipeOptions.Asynchronous
         );
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(ConnectionTimeout);
+        ValidateProtocol(handshake);
+        using var connectionTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        connectionTimeout.CancelAfter(ConnectionTimeout);
+        var connected = false;
 
         try
         {
-            await pipe.ConnectAsync(timeout.Token);
+            await pipe.ConnectAsync(connectionTimeout.Token);
+            connected = true;
             using var reader = new StreamReader(
                 pipe,
                 Encoding.UTF8,
@@ -118,14 +140,24 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
                 NewLine = "\n",
             };
 
-            await writer.WriteLineAsync(JsonSerializer.Serialize(new { id = 1, method, @params = parameters }));
-            var responseLine = await reader.ReadLineAsync(timeout.Token) ??
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeout.CancelAfter(RequestTimeout);
+            await writer.WriteLineAsync(
+                JsonSerializer.Serialize(
+                    new { protocolVersion = CurrentProtocolVersion, id = 1, method, @params = parameters }
+                )
+            );
+            var responseLine = await reader.ReadLineAsync(requestTimeout.Token) ??
                 throw new IOException("The Flax Editor bridge disconnected before returning a response.");
             using var response = JsonDocument.Parse(responseLine);
             var root = response.RootElement;
             if (root.TryGetProperty("error", out var error))
             {
-                throw new InvalidOperationException($"Flax Editor bridge error: {error.GetString()}");
+                var bridgeError = error.Deserialize<FlaxBridgeError>(SerializerOptions) ??
+                    throw new JsonException("The Flax Editor bridge returned an invalid error response.");
+                throw new InvalidOperationException(
+                    $"Flax Editor bridge error [{bridgeError.Code}]: {bridgeError.Message}"
+                );
             }
 
             return root.GetProperty("result").Deserialize<T>(SerializerOptions) ??
@@ -133,9 +165,17 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            var timeout = connected ?
+                RequestTimeout :
+                ConnectionTimeout;
             throw new TimeoutException(
-                $"The Flax Editor bridge did not respond within {ConnectionTimeout.TotalSeconds:0} second."
+                $"The Flax Editor bridge did not respond within {timeout.TotalSeconds:0} " +
+                $"{(timeout == ConnectionTimeout ? "second" : "seconds")}."
             );
+        }
+        catch (IOException ex) when (connected)
+        {
+            throw new IOException("The Flax Editor bridge disconnected before returning a response.", ex);
         }
     }
 
@@ -145,6 +185,17 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             throw new InvalidOperationException(
                 $"No Flax Editor bridge session is available for '{_projectFolder}'."
             );
+    }
+
+    private static void ValidateProtocol(FlaxBridgeHandshake handshake)
+    {
+        if (handshake.ProtocolVersion != CurrentProtocolVersion)
+        {
+            throw new FlaxBridgeProtocolException(
+                $"Flax Editor bridge protocol mismatch: server requires version {CurrentProtocolVersion}, " +
+                $"but the editor plugin reports version {handshake.ProtocolVersion}."
+            );
+        }
     }
 
     private FlaxBridgeHandshake? ReadHandshake()
@@ -170,16 +221,38 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
 
     private sealed record FlaxBridgeHandshake(
         string PipeName,
+        int ProtocolVersion,
         string PluginVersion,
         int EngineBuild,
         DateTime StartedUtc);
 }
 
-public sealed record FlaxBridgeStatus(bool Connected, string? PluginVersion, int? EngineBuild, DateTime? StartedUtc)
+public sealed record FlaxBridgeStatus(
+    bool Connected,
+    string? PluginVersion,
+    int? EngineBuild,
+    DateTime? StartedUtc,
+    string? Error = null)
 {
-    public static FlaxBridgeStatus Disconnected { get; } = new(false, null, null, null);
+    public static FlaxBridgeStatus Disconnected { get; } = new(
+        false,
+        null,
+        null,
+        null,
+        null
+    );
 }
 
 public sealed record FlaxBridgePing(bool Pong, DateTime UtcNow);
 
 public sealed record FlaxBridgeScreenshot(string Path, long Bytes);
+
+internal sealed record FlaxBridgeError(string Code, string Message);
+
+internal sealed class FlaxBridgeProtocolException : InvalidOperationException
+{
+    public FlaxBridgeProtocolException(string message)
+        : base(message)
+    {
+    }
+}
