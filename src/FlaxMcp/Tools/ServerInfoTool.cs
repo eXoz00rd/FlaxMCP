@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using FlaxMcp.Flax;
 using ModelContextProtocol.Server;
 
 namespace FlaxMcp.Tools;
@@ -7,12 +8,28 @@ namespace FlaxMcp.Tools;
 [McpServerToolType]
 public sealed class ServerInfoTool
 {
+    private readonly IFlaxBridgeClient _bridgeClient;
+
+    public ServerInfoTool(IFlaxBridgeClient bridgeClient)
+    {
+        _bridgeClient = bridgeClient;
+    }
+
     [McpServerTool(Name = "server_info", ReadOnly = true, UseStructuredContent = true)]
     [Description("Returns the FlaxMcp server name and version.")]
     public ServerInfo GetServerInfo()
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
         return new ServerInfo("FlaxMcp", version);
+    }
+
+    [McpServerTool(Name = "flax_status", ReadOnly = true, UseStructuredContent = true)]
+    [Description(
+        "Reports whether the configured project has a reachable Flax Editor bridge and returns its session metadata."
+    )]
+    public Task<FlaxBridgeStatus> GetFlaxStatusAsync(CancellationToken cancellationToken)
+    {
+        return _bridgeClient.GetStatusAsync(cancellationToken);
     }
 }
 

@@ -67,7 +67,10 @@ public sealed class FlaxEditorSessionGuardTests : IDisposable
     public void Acquire_WithStaleHandshakeFromADeadProcess_TreatsItAsAvailableAndSucceeds()
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(@"D:\SomeProject") + ".json");
-        File.WriteAllText(handshakePath, $$"""{"pid":{{DefinitelyDeadPid}},"projectFolder":"D:\\SomeProject","startedUtc":"2020-01-01T00:00:00Z"}""");
+        File.WriteAllText(
+            handshakePath,
+            $$"""{"pid":{{DefinitelyDeadPid}},"projectFolder":"D:\\SomeProject","startedUtc":"2020-01-01T00:00:00Z"}"""
+        );
 
         using var lease = _guard.Acquire(@"D:\SomeProject");
 
@@ -87,7 +90,8 @@ public sealed class FlaxEditorSessionGuardTests : IDisposable
 
     private static string ProjectHash(string projectFolder)
     {
-        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(projectFolder.ToLowerInvariant()));
+        var normalized = projectFolder.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(bytes)[..16];
     }
 }

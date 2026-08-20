@@ -21,6 +21,7 @@ public sealed class ToolRegistrationTests
         var tools = Register(new FlaxMcpOptions());
 
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "server_info");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "flax_status");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "project_info");
     }
 
