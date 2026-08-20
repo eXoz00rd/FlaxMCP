@@ -45,6 +45,18 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxEditorSelection> GetSelectionAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxEditorSelection> SetSelectionAsync(
+            IReadOnlyList<string> actorIds,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(
             string path,
             CancellationToken cancellationToken = default)

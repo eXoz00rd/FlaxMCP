@@ -189,6 +189,46 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.False(graph.Truncated);
     }
 
+    [Fact]
+    public async Task GetSelectionAsync_ReturnsTypedSelection()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"selected\":[{\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.Actor\",\"name\":\"Player\"}]}}",
+            TestContext.Current.CancellationToken,
+            "get_selection"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var selection = await client.GetSelectionAsync(TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(7, selection.MainThreadId);
+        Assert.Equal("Player", Assert.Single(selection.Selected).Name);
+    }
+
+    [Fact]
+    public async Task SetSelectionAsync_SendsActorIdsAndReturnsTypedSelection()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"selected\":[]}}",
+            TestContext.Current.CancellationToken,
+            "set_selection",
+            "\"actorIds\":[\"actor-id\"]"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var selection = await client.SetSelectionAsync(["actor-id"], TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Empty(selection.Selected);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
@@ -202,7 +242,8 @@ public sealed class FlaxBridgeClientTests : IDisposable
         string pipeName,
         string response,
         CancellationToken cancellationToken,
-        string method = "ping")
+        string method = "ping",
+        string? expectedRequestText = null)
     {
         await using var pipe = new NamedPipeServerStream(
             pipeName,
@@ -226,6 +267,11 @@ public sealed class FlaxBridgeClientTests : IDisposable
         };
         var request = await reader.ReadLineAsync(cancellationToken);
         Assert.Contains($"\"method\":\"{method}\"", request);
+        if (expectedRequestText is not null)
+        {
+            Assert.Contains(expectedRequestText, request);
+        }
+
         await writer.WriteLineAsync(response);
     }
 

@@ -24,6 +24,8 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "flax_status");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "project_info");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_scene_graph");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_get_selection");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_set_selection");
     }
 
     [Fact]
@@ -48,6 +50,8 @@ public sealed class ToolRegistrationTests
         Assert.Contains("build_result", names);
         Assert.Contains("logs_tail", names);
         Assert.Contains("logs_errors", names);
+        Assert.Contains("editor_get_selection", names);
+        Assert.DoesNotContain("editor_set_selection", names);
     }
 
     [Fact]
