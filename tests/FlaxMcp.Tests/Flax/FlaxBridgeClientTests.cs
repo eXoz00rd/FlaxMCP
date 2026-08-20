@@ -229,6 +229,28 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Empty(selection.Selected);
     }
 
+    [Fact]
+    public async Task GetActorDetailsAsync_ReturnsTypedActorDetails()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.Actor\",\"name\":\"Player\",\"parentId\":null,\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[\"Player\"],\"transform\":{\"translation\":{\"x\":1,\"y\":2,\"z\":3},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"localTransform\":{\"translation\":{\"x\":1,\"y\":2,\"z\":3},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"scripts\":[{\"id\":\"script-id\",\"typeName\":\"Game.Player\",\"enabled\":true,\"isEnabledInHierarchy\":true}]}}",
+            TestContext.Current.CancellationToken,
+            "actor_details",
+            "\"actorId\":\"actor-id\""
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var details = await client.GetActorDetailsAsync("actor-id", TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal("Player", details.Name);
+        Assert.Equal(3, details.Transform.Translation.Z);
+        Assert.Equal("Game.Player", Assert.Single(details.Scripts).TypeName);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(

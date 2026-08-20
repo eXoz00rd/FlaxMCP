@@ -153,6 +153,7 @@ internal sealed class PipeBridgeServer : IDisposable
             "scene_graph" => await GetSceneGraphAsync(),
             "get_selection" => await GetSelectionAsync(),
             "set_selection" => await SetSelectionAsync(RequireStringArrayParam(root, "actorIds")),
+            "actor_details" => await GetActorDetailsAsync(RequireParam(root, "actorId")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -291,6 +292,69 @@ internal sealed class PipeBridgeServer : IDisposable
             })
             .ToList();
         return new { mainThreadId = Globals.MainThreadID, selected };
+    }
+
+    private static Task<object> GetActorDetailsAsync(string actorId)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            if (!Guid.TryParse(actorId, out var id))
+            {
+                throw new ArgumentException($"Actor id '{actorId}' is not a valid GUID.");
+            }
+
+            var actor = Level.FindActor(id) ??
+                throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
+            return new
+            {
+                mainThreadId = Globals.MainThreadID,
+                id = actor.ID.ToString("D"),
+                typeName = actor.GetType().FullName ?? actor.GetType().Name,
+                name = actor.Name,
+                parentId = actor.Parent?.ID.ToString("D"),
+                sceneId = actor.Scene?.ID.ToString("D"),
+                isActive = actor.IsActive,
+                isActiveInHierarchy = actor.IsActiveInHierarchy,
+                layer = actor.Layer,
+                layerName = actor.LayerName,
+                tags = actor.Tags.Select(tag => tag.ToString()).ToList(),
+                transform = BuildTransform(actor.Transform),
+                localTransform = BuildTransform(actor.LocalTransform),
+                scripts = actor.Scripts.Select(script => new
+                {
+                    id = script.ID.ToString("D"),
+                    typeName = script.GetType().FullName ?? script.GetType().Name,
+                    enabled = script.Enabled,
+                    isEnabledInHierarchy = script.IsEnabledInHierarchy,
+                }).ToList(),
+            };
+        });
+    }
+
+    private static object BuildTransform(Transform transform)
+    {
+        return new
+        {
+            translation = new
+            {
+                x = transform.Translation.X,
+                y = transform.Translation.Y,
+                z = transform.Translation.Z,
+            },
+            orientation = new
+            {
+                x = transform.Orientation.X,
+                y = transform.Orientation.Y,
+                z = transform.Orientation.Z,
+                w = transform.Orientation.W,
+            },
+            scale = new
+            {
+                x = transform.Scale.X,
+                y = transform.Scale.Y,
+                z = transform.Scale.Z,
+            },
+        };
     }
 
     private static Task<object> InvokeOnUpdateAsync(Func<object> action)

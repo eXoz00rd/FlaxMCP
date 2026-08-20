@@ -26,6 +26,7 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_scene_graph");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_get_selection");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_set_selection");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_actor_details");
     }
 
     [Fact]
@@ -51,6 +52,7 @@ public sealed class ToolRegistrationTests
         Assert.Contains("logs_tail", names);
         Assert.Contains("logs_errors", names);
         Assert.Contains("editor_get_selection", names);
+        Assert.Contains("editor_actor_details", names);
         Assert.DoesNotContain("editor_set_selection", names);
     }
 
