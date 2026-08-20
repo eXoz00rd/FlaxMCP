@@ -76,4 +76,11 @@ public sealed class EditorTools
             cancellationToken
         );
     }
+
+    [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
+    [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
+    public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)
+    {
+        return _bridgeClient.SaveAsync(cancellationToken);
+    }
 }

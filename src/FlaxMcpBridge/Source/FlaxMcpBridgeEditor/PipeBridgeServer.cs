@@ -19,7 +19,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 3;
+    private const int ProtocolVersion = 4;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -158,6 +158,7 @@ internal sealed class PipeBridgeServer : IDisposable
                 RequireParam(root, "actorId"),
                 RequireObjectParam(root, "transform")
             ),
+            "save" => await SaveAsync(),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -337,6 +338,10 @@ internal sealed class PipeBridgeServer : IDisposable
             var actor = Level.FindActor(id) ??
                 throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
             actor.Transform = ReadTransform(transform);
+            if (actor.Scene is { } scene)
+            {
+                FlaxEditor.Editor.Instance.Scene.MarkSceneEdited(scene);
+            }
             return BuildActorDetails(actor);
         });
     }
@@ -472,6 +477,15 @@ internal sealed class PipeBridgeServer : IDisposable
     {
         public int NodeCount;
         public bool Truncated;
+    }
+
+    private static Task<object> SaveAsync()
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            FlaxEditor.Editor.Instance.SaveAll();
+            return new { mainThreadId = Globals.MainThreadID, saved = true };
+        });
     }
 
     private static async Task<object> CaptureScreenshotAsync(string path)

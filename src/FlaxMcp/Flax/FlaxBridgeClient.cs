@@ -27,12 +27,14 @@ public interface IFlaxBridgeClient
         FlaxActorTransform transform,
         CancellationToken cancellationToken = default);
 
+    Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default);
+
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
 }
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 3;
+    internal const int CurrentProtocolVersion = 4;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -155,6 +157,11 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             new { actorId, transform },
             cancellationToken
         );
+    }
+
+    public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxEditorSaveResult>(RequireHandshake(), "save", null, cancellationToken);
     }
 
     public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default)
@@ -308,6 +315,8 @@ public sealed record FlaxBridgeStatus(
 public sealed record FlaxBridgePing(bool Pong, DateTime UtcNow);
 
 public sealed record FlaxBridgeScreenshot(string Path, long Bytes);
+
+public sealed record FlaxEditorSaveResult(int MainThreadId, bool Saved);
 
 public sealed record FlaxLiveSceneGraph(
     int MainThreadId,
