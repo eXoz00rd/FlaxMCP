@@ -86,6 +86,18 @@ public sealed class EditorToolsTests
         Assert.Equal(new FlaxActorTransform(translation, orientation, scale), bridge.Transform);
     }
 
+    [Fact]
+    public async Task SaveAsync_ReturnsBridgeResult()
+    {
+        var expected = new FlaxEditorSaveResult(12, true);
+        var bridge = new StubBridgeClient { SaveResult = expected };
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.SaveAsync(TestContext.Current.CancellationToken);
+
+        Assert.Same(expected, result);
+    }
+
     private static FlaxActorDetails CreateActorDetails()
     {
         var transform = new FlaxActorTransform(
@@ -124,6 +136,8 @@ public sealed class EditorToolsTests
         public string? ActorId { get; private set; }
 
         public FlaxActorTransform? Transform { get; private set; }
+
+        public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
 
         public StubBridgeClient()
             : this(new FlaxLiveSceneGraph(0, [], false))
@@ -186,6 +200,11 @@ public sealed class EditorToolsTests
             ActorId = actorId;
             Transform = transform;
             return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(SaveResult);
         }
     }
 }

@@ -100,7 +100,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
     [Fact]
     public async Task PingAsync_WithMismatchedProtocol_ReportsVersions()
     {
-        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 2);
+        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 3);
         var client = new FlaxBridgeClient(_projectFolder, _tempDir);
 
         var exception =
@@ -108,8 +108,8 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 3", exception.Message);
-        Assert.Contains("plugin reports version 2", exception.Message);
+        Assert.Contains("server requires version 4", exception.Message);
+        Assert.Contains("plugin reports version 3", exception.Message);
     }
 
     [Fact]
@@ -282,6 +282,25 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(30, details.Transform.Translation.Z);
     }
 
+    [Fact]
+    public async Task SaveAsync_ReturnsTypedSaveResult()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"saved\":true}}",
+            TestContext.Current.CancellationToken,
+            "save"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.SaveAsync(TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(new FlaxEditorSaveResult(7, true), result);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
@@ -348,7 +367,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 3)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 4)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(
