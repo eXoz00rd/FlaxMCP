@@ -210,10 +210,15 @@ internal sealed class PipeBridgeServer : IDisposable
             throw new ArgumentException($"Missing required params.{name} array");
         }
 
-        var result = new List<string>();
+        var result = new List<string>(value.GetArrayLength());
         foreach (var item in value.EnumerateArray())
         {
-            result.Add(item.GetString() ?? throw new ArgumentException($"params.{name} must contain strings"));
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                throw new ArgumentException($"params.{name} must contain strings");
+            }
+
+            result.Add(item.GetString()!);
         }
         return result;
     }
