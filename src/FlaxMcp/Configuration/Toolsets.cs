@@ -14,6 +14,7 @@ public static class Toolsets
         ["scene"] = typeof(SceneTools),
         ["build"] = typeof(BuildTools),
         ["logs"] = typeof(LogTools),
+        ["editor"] = typeof(EditorTools)
     };
 
     public static IReadOnlyCollection<string> Names => Registry.Keys;
@@ -28,7 +29,10 @@ public static class Toolsets
         var selected = new List<Type> { Registry[ServerToolset] };
         var unknown = new List<string>();
 
-        foreach (var name in requested.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var name in requested.Split(
+                     ',',
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                 ))
         {
             if (name.Equals(ServerToolset, StringComparison.OrdinalIgnoreCase))
             {

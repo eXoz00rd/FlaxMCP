@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FlaxMcp.Flax;
 using FlaxMcp.Tools;
 using Xunit;
@@ -41,7 +40,7 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
-        public Task<JsonElement> ListActorsAsync(CancellationToken cancellationToken = default)
+        public Task<FlaxLiveSceneGraph> GetSceneGraphAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }

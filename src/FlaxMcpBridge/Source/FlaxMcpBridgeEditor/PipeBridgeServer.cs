@@ -20,6 +20,8 @@ namespace FlaxMcpBridge.Editor;
 internal sealed class PipeBridgeServer : IDisposable
 {
     private const int ProtocolVersion = 1;
+    private const int MaxSceneGraphDepth = 32;
+    private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private readonly string _projectFolder;
     private readonly CancellationTokenSource _cts = new();
@@ -148,7 +150,7 @@ internal sealed class PipeBridgeServer : IDisposable
         object result = method switch
         {
             "ping" => new { pong = true, utcNow = DateTime.UtcNow },
-            "list_actors" => await ListActorsAsync(),
+            "scene_graph" => await GetSceneGraphAsync(),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -197,19 +199,26 @@ internal sealed class PipeBridgeServer : IDisposable
         throw new ArgumentException($"Missing required params.{name}");
     }
 
-    private static Task<object> ListActorsAsync()
+    private static Task<object> GetSceneGraphAsync()
     {
-        var tcs = new TaskCompletionSource<object>();
+        var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         Scripting.InvokeOnUpdate(() =>
         {
             try
             {
+                var state = new SceneGraphState();
                 var scenes = new List<object>();
                 foreach (var scene in Level.Scenes)
                 {
-                    scenes.Add(new { scene = scene.Name, actors = Walk(scene, 0) });
+                    if (state.NodeCount >= MaxSceneGraphNodes)
+                    {
+                        state.Truncated = true;
+                        break;
+                    }
+
+                    scenes.Add(BuildSceneNode(scene, 0, state));
                 }
-                tcs.TrySetResult(new { mainThreadId = Globals.MainThreadID, scenes });
+                tcs.TrySetResult(new { mainThreadId = Globals.MainThreadID, scenes, truncated = state.Truncated });
             }
             catch (Exception ex)
             {
@@ -219,17 +228,42 @@ internal sealed class PipeBridgeServer : IDisposable
         return tcs.Task;
     }
 
-    private static List<object> Walk(Actor actor, int depth)
+    private static object BuildSceneNode(Actor actor, int depth, SceneGraphState state)
     {
-        var result = new List<object>();
-        if (depth > 8)
-            return result;
+        state.NodeCount++;
+        var children = new List<object>();
 
-        foreach (var child in actor.Children)
+        if (actor.Children.Count > 0 && depth >= MaxSceneGraphDepth)
         {
-            result.Add(new { name = child.Name, type = child.GetType().Name, children = Walk(child, depth + 1) });
+            state.Truncated = true;
         }
-        return result;
+        else
+        {
+            foreach (var child in actor.Children)
+            {
+                if (state.NodeCount >= MaxSceneGraphNodes)
+                {
+                    state.Truncated = true;
+                    break;
+                }
+
+                children.Add(BuildSceneNode(child, depth + 1, state));
+            }
+        }
+
+        return new
+        {
+            id = actor.ID.ToString(),
+            typeName = actor.GetType().FullName ?? actor.GetType().Name,
+            name = actor.Name,
+            children,
+        };
+    }
+
+    private sealed class SceneGraphState
+    {
+        public int NodeCount;
+        public bool Truncated;
     }
 
     private static async Task<object> CaptureScreenshotAsync(string path)

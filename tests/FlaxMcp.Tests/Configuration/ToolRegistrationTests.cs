@@ -23,6 +23,7 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "server_info");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "flax_status");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "project_info");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_scene_graph");
     }
 
     [Fact]
