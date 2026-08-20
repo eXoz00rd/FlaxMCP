@@ -108,7 +108,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 4", exception.Message);
+        Assert.Contains("server requires version 5", exception.Message);
         Assert.Contains("plugin reports version 3", exception.Message);
     }
 
@@ -301,6 +301,26 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(new FlaxEditorSaveResult(7, true), result);
     }
 
+    [Fact]
+    public async Task SetPlayModeAsync_SendsActionAndReturnsTypedResult()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"requestedAction\":\"pause\",\"isPlayMode\":true,\"isPaused\":true}}",
+            TestContext.Current.CancellationToken,
+            "play_mode",
+            "\"action\":\"pause\""
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.SetPlayModeAsync("pause", TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(new FlaxEditorPlayModeResult(7, "pause", true, true), result);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
@@ -367,7 +387,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 4)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 5)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(

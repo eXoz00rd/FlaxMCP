@@ -19,7 +19,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 4;
+    private const int ProtocolVersion = 5;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -159,6 +159,7 @@ internal sealed class PipeBridgeServer : IDisposable
                 RequireObjectParam(root, "transform")
             ),
             "save" => await SaveAsync(),
+            "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -485,6 +486,41 @@ internal sealed class PipeBridgeServer : IDisposable
         {
             FlaxEditor.Editor.Instance.SaveAll();
             return new { mainThreadId = Globals.MainThreadID, saved = true };
+        });
+    }
+
+    private static Task<object> SetPlayModeAsync(string action)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            var editor = FlaxEditor.Editor.Instance;
+            var normalizedAction = action.ToLowerInvariant();
+            switch (normalizedAction)
+            {
+                case "start":
+                    editor.Simulation.RequestStartPlayScenes();
+                    break;
+                case "stop":
+                    editor.Simulation.RequestStopPlay();
+                    break;
+                case "pause":
+                    editor.Simulation.RequestPausePlay();
+                    break;
+                case "resume":
+                    editor.Simulation.RequestResumePlay();
+                    break;
+                default:
+                    throw new ArgumentException("Play mode action must be start, stop, pause, or resume.");
+            }
+
+            var playingState = editor.StateMachine.CurrentState as FlaxEditor.States.PlayingState;
+            return new
+            {
+                mainThreadId = Globals.MainThreadID,
+                requestedAction = normalizedAction,
+                isPlayMode = editor.IsPlayMode,
+                isPaused = playingState?.IsPaused ?? false,
+            };
         });
     }
 

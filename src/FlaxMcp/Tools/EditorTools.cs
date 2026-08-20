@@ -83,4 +83,15 @@ public sealed class EditorTools
     {
         return _bridgeClient.SaveAsync(cancellationToken);
     }
+
+    [McpServerTool(Name = "editor_play_mode", UseStructuredContent = true)]
+    [Description(
+        "Controls play mode in the live Flax Editor. Action must be start, stop, pause, or resume."
+    )]
+    public Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
+        [Description("Play mode action: start, stop, pause, or resume.")] string action,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.SetPlayModeAsync(action, cancellationToken);
+    }
 }
