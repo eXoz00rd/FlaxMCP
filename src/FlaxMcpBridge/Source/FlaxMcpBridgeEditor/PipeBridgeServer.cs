@@ -313,10 +313,10 @@ internal sealed class PipeBridgeServer : IDisposable
                 name = actor.Name,
                 parentId = actor.Parent?.ID.ToString("D"),
                 sceneId = actor.Scene?.ID.ToString("D"),
-                actor.IsActive,
-                actor.IsActiveInHierarchy,
-                actor.Layer,
-                actor.LayerName,
+                isActive = actor.IsActive,
+                isActiveInHierarchy = actor.IsActiveInHierarchy,
+                layer = actor.Layer,
+                layerName = actor.LayerName,
                 tags = actor.Tags.Select(tag => tag.ToString()).ToList(),
                 transform = BuildTransform(actor.Transform),
                 localTransform = BuildTransform(actor.LocalTransform),
@@ -324,8 +324,8 @@ internal sealed class PipeBridgeServer : IDisposable
                 {
                     id = script.ID.ToString("D"),
                     typeName = script.GetType().FullName ?? script.GetType().Name,
-                    script.Enabled,
-                    script.IsEnabledInHierarchy,
+                    enabled = script.Enabled,
+                    isEnabledInHierarchy = script.IsEnabledInHierarchy,
                 }).ToList(),
             };
         });
