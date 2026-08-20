@@ -151,6 +151,8 @@ internal sealed class PipeBridgeServer : IDisposable
         {
             "ping" => new { pong = true, utcNow = DateTime.UtcNow },
             "scene_graph" => await GetSceneGraphAsync(),
+            "get_selection" => await GetSelectionAsync(),
+            "set_selection" => await SetSelectionAsync(RequireStringArrayParam(root, "actorIds")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -199,6 +201,23 @@ internal sealed class PipeBridgeServer : IDisposable
         throw new ArgumentException($"Missing required params.{name}");
     }
 
+    private static IReadOnlyList<string> RequireStringArrayParam(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty("params", out var paramsElement) ||
+            !paramsElement.TryGetProperty(name, out var value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            throw new ArgumentException($"Missing required params.{name} array");
+        }
+
+        var result = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            result.Add(item.GetString() ?? throw new ArgumentException($"params.{name} must contain strings"));
+        }
+        return result;
+    }
+
     private static Task<object> GetSceneGraphAsync()
     {
         var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -228,12 +247,70 @@ internal sealed class PipeBridgeServer : IDisposable
         return tcs.Task;
     }
 
+    private static Task<object> GetSelectionAsync()
+    {
+        return InvokeOnUpdateAsync(GetSelection);
+    }
+
+    private static Task<object> SetSelectionAsync(IReadOnlyList<string> actorIds)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            var nodes = new List<FlaxEditor.SceneGraph.SceneGraphNode>(actorIds.Count);
+            foreach (var actorId in actorIds)
+            {
+                if (!Guid.TryParse(actorId, out var id))
+                {
+                    throw new ArgumentException($"Actor id '{actorId}' is not a valid GUID.");
+                }
+
+                var node = FlaxEditor.Editor.Instance.Scene.GetActorNode(id) ??
+                    throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor scene graph.");
+                nodes.Add(node);
+            }
+
+            FlaxEditor.Editor.Instance.SceneEditing.Select(nodes, additive: false);
+            return GetSelection();
+        });
+    }
+
+    private static object GetSelection()
+    {
+        var selected = FlaxEditor.Editor.Instance.SceneEditing.Selection
+            .OfType<FlaxEditor.SceneGraph.ActorNode>()
+            .Select(node => new
+            {
+                id = node.Actor.ID.ToString("D"),
+                typeName = node.Actor.GetType().FullName ?? node.Actor.GetType().Name,
+                name = node.Actor.Name,
+            })
+            .ToList();
+        return new { mainThreadId = Globals.MainThreadID, selected };
+    }
+
+    private static Task<object> InvokeOnUpdateAsync(Func<object> action)
+    {
+        var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Scripting.InvokeOnUpdate(() =>
+        {
+            try
+            {
+                tcs.TrySetResult(action());
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        });
+        return tcs.Task;
+    }
+
     private static object BuildSceneNode(Actor actor, int depth, SceneGraphState state)
     {
         state.NodeCount++;
         var children = new List<object>();
 
-        if (actor.Children.Count > 0 && depth >= MaxSceneGraphDepth)
+        if (actor.Children.Any() && depth >= MaxSceneGraphDepth)
         {
             state.Truncated = true;
         }

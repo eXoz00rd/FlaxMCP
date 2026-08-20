@@ -23,4 +23,23 @@ public sealed class EditorTools
     {
         return _bridgeClient.GetSceneGraphAsync(cancellationToken);
     }
+
+    [McpServerTool(Name = "editor_get_selection", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns the actors currently selected in the live Flax Editor.")]
+    public Task<FlaxEditorSelection> GetSelectionAsync(CancellationToken cancellationToken)
+    {
+        return _bridgeClient.GetSelectionAsync(cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_set_selection", UseStructuredContent = true)]
+    [Description(
+        "Replaces the live Flax Editor actor selection with the actors identified by GUID. " +
+        "Pass an empty list to clear the selection."
+    )]
+    public Task<FlaxEditorSelection> SetSelectionAsync(
+        [Description("Actor GUIDs from editor_scene_graph.")] IReadOnlyList<string> actorIds,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.SetSelectionAsync(actorIds, cancellationToken);
+    }
 }

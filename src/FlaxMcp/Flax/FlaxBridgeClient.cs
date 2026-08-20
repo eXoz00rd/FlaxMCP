@@ -14,6 +14,12 @@ public interface IFlaxBridgeClient
 
     Task<FlaxLiveSceneGraph> GetSceneGraphAsync(CancellationToken cancellationToken = default);
 
+    Task<FlaxEditorSelection> GetSelectionAsync(CancellationToken cancellationToken = default);
+
+    Task<FlaxEditorSelection> SetSelectionAsync(
+        IReadOnlyList<string> actorIds,
+        CancellationToken cancellationToken = default);
+
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
 }
 
@@ -94,6 +100,23 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     public Task<FlaxLiveSceneGraph> GetSceneGraphAsync(CancellationToken cancellationToken = default)
     {
         return CallAsync<FlaxLiveSceneGraph>(RequireHandshake(), "scene_graph", null, cancellationToken);
+    }
+
+    public Task<FlaxEditorSelection> GetSelectionAsync(CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxEditorSelection>(RequireHandshake(), "get_selection", null, cancellationToken);
+    }
+
+    public Task<FlaxEditorSelection> SetSelectionAsync(
+        IReadOnlyList<string> actorIds,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxEditorSelection>(
+            RequireHandshake(),
+            "set_selection",
+            new { actorIds },
+            cancellationToken
+        );
     }
 
     public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default)
@@ -257,6 +280,12 @@ public sealed record FlaxLiveSceneNode(
     string TypeName,
     string? Name,
     IReadOnlyList<FlaxLiveSceneNode> Children);
+
+public sealed record FlaxEditorSelection(
+    int MainThreadId,
+    IReadOnlyList<FlaxEditorSelectionItem> Selected);
+
+public sealed record FlaxEditorSelectionItem(string Id, string TypeName, string Name);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 
