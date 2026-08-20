@@ -480,6 +480,14 @@ internal sealed class PipeBridgeServer : IDisposable
         public bool Truncated;
     }
 
+    private sealed record PlayModeState(int MainThreadId, bool IsPlayMode, bool IsPaused)
+    {
+        public PlayModeState(bool isPlayMode, bool isPaused)
+            : this(0, isPlayMode, isPaused)
+        {
+        }
+    }
+
     private static Task<object> SaveAsync()
     {
         return InvokeOnUpdateAsync(() =>
@@ -489,12 +497,21 @@ internal sealed class PipeBridgeServer : IDisposable
         });
     }
 
-    private static Task<object> SetPlayModeAsync(string action)
+    private static async Task<object> SetPlayModeAsync(string action)
     {
-        return InvokeOnUpdateAsync(() =>
+        var normalizedAction = action.ToLowerInvariant();
+        var expectedState = normalizedAction switch
+        {
+            "start" => new PlayModeState(true, false),
+            "stop" => new PlayModeState(false, false),
+            "pause" => new PlayModeState(true, true),
+            "resume" => new PlayModeState(true, false),
+            _ => throw new ArgumentException("Play mode action must be start, stop, pause, or resume."),
+        };
+
+        await InvokeOnUpdateAsync(() =>
         {
             var editor = FlaxEditor.Editor.Instance;
-            var normalizedAction = action.ToLowerInvariant();
             switch (normalizedAction)
             {
                 case "start":
@@ -509,19 +526,45 @@ internal sealed class PipeBridgeServer : IDisposable
                 case "resume":
                     editor.Simulation.RequestResumePlay();
                     break;
-                default:
-                    throw new ArgumentException("Play mode action must be start, stop, pause, or resume.");
             }
 
-            var playingState = editor.StateMachine.CurrentState as FlaxEditor.States.PlayingState;
-            return new
-            {
-                mainThreadId = Globals.MainThreadID,
-                requestedAction = normalizedAction,
-                isPlayMode = editor.IsPlayMode,
-                isPaused = playingState?.IsPaused ?? false,
-            };
+            return new object();
         });
+
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var state = await ReadPlayModeStateAsync();
+            if (state.IsPlayMode == expectedState.IsPlayMode && state.IsPaused == expectedState.IsPaused)
+            {
+                return new
+                {
+                    mainThreadId = state.MainThreadId,
+                    requestedAction = normalizedAction,
+                    isPlayMode = state.IsPlayMode,
+                    isPaused = state.IsPaused,
+                };
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"The Flax Editor did not complete the '{normalizedAction}' play mode action.");
+    }
+
+    private static Task<PlayModeState> ReadPlayModeStateAsync()
+    {
+        var tcs = new TaskCompletionSource<PlayModeState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Scripting.InvokeOnUpdate(() =>
+        {
+            var editor = FlaxEditor.Editor.Instance;
+            var playingState = editor.StateMachine.CurrentState as FlaxEditor.States.PlayingState;
+            tcs.TrySetResult(new PlayModeState(
+                Globals.MainThreadID,
+                editor.IsPlayMode,
+                playingState?.IsPaused ?? false
+            ));
+        });
+        return tcs.Task;
     }
 
     private static async Task<object> CaptureScreenshotAsync(string path)
