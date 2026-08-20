@@ -153,11 +153,31 @@ Bulleted checklist of what was actually run/observed.
 ```
 
 - Reference the issue with `Closes #<n>` when the PR fully resolves it.
+- Open the PR ready for review, not as a draft, unless the user explicitly requests a draft.
 - No self-attribution in the PR body either.
 - Move the issue's board status to **In Progress → (stays)** — it flips to **Done** on its own
   once the linked issue closes; don't force it to Done manually before that.
 
-## 9. Report back
+## 9. Review loop and merge
+
+When the user authorizes monitoring through merge, keep the task active until the PR reaches a
+terminal state:
+
+- Poll for the latest Copilot review, authoritative inline review threads, and CI result. Do not
+  treat an earlier review as covering commits pushed afterward.
+- If actionable comments arrive, verify them against the current patch, implement valid fixes,
+  run the relevant validation, commit and push the approved fixes, reply with the commit that
+  addressed each comment, and resolve every fixed thread. Then wait for Copilot to review the
+  new head commit again.
+- Do not stop merely because fixes were pushed. A fixed comment is complete only after its reply
+  is posted and its review thread is resolved.
+- Merge only when the latest Copilot review covers the current head and has no actionable
+  comments, all review threads are resolved, and required CI checks pass. Use the repository's
+  configured merge method; do not force past branch protection or failing checks.
+- If Copilot or CI does not reach a terminal result within the current monitoring window, keep
+  waiting rather than guessing that silence means approval.
+
+## 10. Report back
 
 Summarize in ≤100 words: which issue, what changed, validation results, PR link if one was
 opened (the tool already surfaces the PR card — don't repeat the URL/number in text).
