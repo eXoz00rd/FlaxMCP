@@ -154,6 +154,10 @@ internal sealed class PipeBridgeServer : IDisposable
             "get_selection" => await GetSelectionAsync(),
             "set_selection" => await SetSelectionAsync(RequireStringArrayParam(root, "actorIds")),
             "actor_details" => await GetActorDetailsAsync(RequireParam(root, "actorId")),
+            "modify_actor" => await ModifyActorAsync(
+                RequireParam(root, "actorId"),
+                RequireObjectParam(root, "transform")
+            ),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -222,6 +226,18 @@ internal sealed class PipeBridgeServer : IDisposable
             result.Add(item.GetString()!);
         }
         return result;
+    }
+
+    private static JsonElement RequireObjectParam(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("params", out var paramsElement) &&
+            paramsElement.TryGetProperty(name, out var value) &&
+            value.ValueKind == JsonValueKind.Object)
+        {
+            return value.Clone();
+        }
+
+        throw new ArgumentException($"Missing required params.{name} object");
     }
 
     private static Task<object> GetSceneGraphAsync()
@@ -305,30 +321,76 @@ internal sealed class PipeBridgeServer : IDisposable
 
             var actor = Level.FindActor(id) ??
                 throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
-            return new
-            {
-                mainThreadId = Globals.MainThreadID,
-                id = actor.ID.ToString("D"),
-                typeName = actor.GetType().FullName ?? actor.GetType().Name,
-                name = actor.Name,
-                parentId = actor.Parent?.ID.ToString("D"),
-                sceneId = actor.Scene?.ID.ToString("D"),
-                isActive = actor.IsActive,
-                isActiveInHierarchy = actor.IsActiveInHierarchy,
-                layer = actor.Layer,
-                layerName = actor.LayerName,
-                tags = actor.Tags.Select(tag => tag.ToString()).ToList(),
-                transform = BuildTransform(actor.Transform),
-                localTransform = BuildTransform(actor.LocalTransform),
-                scripts = actor.Scripts.Select(script => new
-                {
-                    id = script.ID.ToString("D"),
-                    typeName = script.GetType().FullName ?? script.GetType().Name,
-                    enabled = script.Enabled,
-                    isEnabledInHierarchy = script.IsEnabledInHierarchy,
-                }).ToList(),
-            };
+            return BuildActorDetails(actor);
         });
+    }
+
+    private static Task<object> ModifyActorAsync(string actorId, JsonElement transform)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            if (!Guid.TryParse(actorId, out var id))
+            {
+                throw new ArgumentException($"Actor id '{actorId}' is not a valid GUID.");
+            }
+
+            var actor = Level.FindActor(id) ??
+                throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
+            actor.Transform = ReadTransform(transform);
+            return BuildActorDetails(actor);
+        });
+    }
+
+    private static Transform ReadTransform(JsonElement value)
+    {
+        var translation = value.GetProperty("translation");
+        var orientation = value.GetProperty("orientation");
+        var scale = value.GetProperty("scale");
+        return new Transform(
+            new Vector3(
+                translation.GetProperty("x").GetSingle(),
+                translation.GetProperty("y").GetSingle(),
+                translation.GetProperty("z").GetSingle()
+            ),
+            new Quaternion(
+                orientation.GetProperty("x").GetSingle(),
+                orientation.GetProperty("y").GetSingle(),
+                orientation.GetProperty("z").GetSingle(),
+                orientation.GetProperty("w").GetSingle()
+            ),
+            new Vector3(
+                scale.GetProperty("x").GetSingle(),
+                scale.GetProperty("y").GetSingle(),
+                scale.GetProperty("z").GetSingle()
+            )
+        );
+    }
+
+    private static object BuildActorDetails(Actor actor)
+    {
+        return new
+        {
+            mainThreadId = Globals.MainThreadID,
+            id = actor.ID.ToString("D"),
+            typeName = actor.GetType().FullName ?? actor.GetType().Name,
+            name = actor.Name,
+            parentId = actor.Parent?.ID.ToString("D"),
+            sceneId = actor.Scene?.ID.ToString("D"),
+            isActive = actor.IsActive,
+            isActiveInHierarchy = actor.IsActiveInHierarchy,
+            layer = actor.Layer,
+            layerName = actor.LayerName,
+            tags = actor.Tags.Select(tag => tag.ToString()).ToList(),
+            transform = BuildTransform(actor.Transform),
+            localTransform = BuildTransform(actor.LocalTransform),
+            scripts = actor.Scripts.Select(script => new
+            {
+                id = script.ID.ToString("D"),
+                typeName = script.GetType().FullName ?? script.GetType().Name,
+                enabled = script.Enabled,
+                isEnabledInHierarchy = script.IsEnabledInHierarchy,
+            }).ToList(),
+        };
     }
 
     private static object BuildTransform(Transform transform)

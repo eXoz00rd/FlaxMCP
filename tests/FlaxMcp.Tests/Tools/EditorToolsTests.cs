@@ -63,6 +63,29 @@ public sealed class EditorToolsTests
         Assert.Equal("actor-id", bridge.ActorId);
     }
 
+    [Fact]
+    public async Task ModifyActorAsync_ForwardsActorIdAndTransform()
+    {
+        var expected = CreateActorDetails();
+        var bridge = new StubBridgeClient { ActorDetails = expected };
+        var tool = new EditorTools(bridge);
+        var translation = new FlaxVector3(10, 20, 30);
+        var orientation = new FlaxQuaternion(0, 0, 0, 1);
+        var scale = new FlaxVector3(1, 2, 3);
+
+        var result = await tool.ModifyActorAsync(
+            "actor-id",
+            translation,
+            orientation,
+            scale,
+            TestContext.Current.CancellationToken
+        );
+
+        Assert.Same(expected, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Equal(new FlaxActorTransform(translation, orientation, scale), bridge.Transform);
+    }
+
     private static FlaxActorDetails CreateActorDetails()
     {
         var transform = new FlaxActorTransform(
@@ -99,6 +122,8 @@ public sealed class EditorToolsTests
         public FlaxActorDetails ActorDetails { get; set; } = CreateActorDetails();
 
         public string? ActorId { get; private set; }
+
+        public FlaxActorTransform? Transform { get; private set; }
 
         public StubBridgeClient()
             : this(new FlaxLiveSceneGraph(0, [], false))
@@ -150,6 +175,16 @@ public sealed class EditorToolsTests
             CancellationToken cancellationToken = default)
         {
             ActorId = actorId;
+            return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDetails> ModifyActorAsync(
+            string actorId,
+            FlaxActorTransform transform,
+            CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            Transform = transform;
             return Task.FromResult(ActorDetails);
         }
     }

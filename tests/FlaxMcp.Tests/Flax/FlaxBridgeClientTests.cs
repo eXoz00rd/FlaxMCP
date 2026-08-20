@@ -251,6 +251,37 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal("Game.Player", Assert.Single(details.Scripts).TypeName);
     }
 
+    [Fact]
+    public async Task ModifyActorAsync_SendsTransformAndReturnsTypedActorDetails()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var response =
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.Actor\",\"name\":\"Player\",\"parentId\":null,\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[],\"transform\":{\"translation\":{\"x\":10,\"y\":20,\"z\":30},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"localTransform\":{\"translation\":{\"x\":10,\"y\":20,\"z\":30},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"scripts\":[]}}";
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            response,
+            TestContext.Current.CancellationToken,
+            "modify_actor",
+            "\"translation\":{\"x\":10,\"y\":20,\"z\":30}"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        var transform = new FlaxActorTransform(
+            new FlaxVector3(10, 20, 30),
+            new FlaxQuaternion(0, 0, 0, 1),
+            new FlaxVector3(1, 1, 1)
+        );
+
+        var details = await client.ModifyActorAsync(
+            "actor-id",
+            transform,
+            TestContext.Current.CancellationToken
+        );
+        await serverTask;
+
+        Assert.Equal(30, details.Transform.Translation.Z);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
