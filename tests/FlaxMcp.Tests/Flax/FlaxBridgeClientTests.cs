@@ -100,7 +100,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
     [Fact]
     public async Task PingAsync_WithMismatchedProtocol_ReportsVersions()
     {
-        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 3);
+        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 2);
         var client = new FlaxBridgeClient(_projectFolder, _tempDir);
 
         var exception =
@@ -108,8 +108,8 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 2", exception.Message);
-        Assert.Contains("plugin reports version 3", exception.Message);
+        Assert.Contains("server requires version 3", exception.Message);
+        Assert.Contains("plugin reports version 2", exception.Message);
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 2)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 3)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(
