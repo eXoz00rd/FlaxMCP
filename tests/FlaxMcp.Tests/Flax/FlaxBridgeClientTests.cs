@@ -72,7 +72,35 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(FlaxBridgeStatus.Disconnected, status);
     }
 
+    [Theory]
+    [InlineData("{\"id\":1,\"error\":\"Editor action failed\"}")]
+    [InlineData("{\"id\":1}")]
+    public async Task GetStatusAsync_WithInvalidBridgeResponse_ReturnsDisconnected(string response)
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var status = await client.GetStatusAsync(TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(FlaxBridgeStatus.Disconnected, status);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
+    {
+        await ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"pong\":true,\"utcNow\":\"2026-08-20T10:00:01Z\"}}",
+            cancellationToken
+        );
+    }
+
+    private static async Task ServeResponseAsync(
+        string pipeName,
+        string response,
+        CancellationToken cancellationToken)
     {
         await using var pipe = new NamedPipeServerStream(
             pipeName,
@@ -96,7 +124,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         };
         var request = await reader.ReadLineAsync(cancellationToken);
         Assert.Contains("\"method\":\"ping\"", request);
-        await writer.WriteLineAsync("{\"id\":1,\"result\":{\"pong\":true,\"utcNow\":\"2026-08-20T10:00:01Z\"}}");
+        await writer.WriteLineAsync(response);
     }
 
     private void WriteHandshake(string pipeName, DateTime startedUtc)

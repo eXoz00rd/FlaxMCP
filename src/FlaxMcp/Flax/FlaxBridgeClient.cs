@@ -55,7 +55,11 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
         {
             return FlaxBridgeStatus.Disconnected;
         }
-        catch (Exception ex) when (ex is IOException or JsonException or TimeoutException)
+        catch (Exception ex) when (ex is IOException
+                                       or JsonException
+                                       or TimeoutException
+                                       or InvalidOperationException
+                                       or KeyNotFoundException)
         {
             return FlaxBridgeStatus.Disconnected;
         }
