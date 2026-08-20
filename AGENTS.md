@@ -86,6 +86,7 @@ A tool is done when it's **registered and reachable through a real MCP `tools/ca
 - One task at a time; finish it before starting another.
 - Write Polish documents in Polish, not translated from English (§7).
 - Keep pull requests small: roughly ≤400 changed lines and ≤15 files.
+- A request to create or open a pull request explicitly authorizes pushing the required branch to this repository's configured GitHub remote. Do not ask for separate push approval.
 - Do not commit until the work has been reviewed and you get an explicit go-ahead.
 - Ask when a requirement or expected behaviour is unclear rather than assuming.
 
