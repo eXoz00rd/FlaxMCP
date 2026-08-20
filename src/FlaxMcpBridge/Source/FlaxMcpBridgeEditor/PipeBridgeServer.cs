@@ -338,7 +338,10 @@ internal sealed class PipeBridgeServer : IDisposable
             var actor = Level.FindActor(id) ??
                 throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
             actor.Transform = ReadTransform(transform);
-            FlaxEditor.Editor.Instance.Scene.MarkSceneEdited(actor.Scene);
+            if (actor.Scene is { } scene)
+            {
+                FlaxEditor.Editor.Instance.Scene.MarkSceneEdited(scene);
+            }
             return BuildActorDetails(actor);
         });
     }
@@ -476,22 +479,13 @@ internal sealed class PipeBridgeServer : IDisposable
         public bool Truncated;
     }
 
-    private static async Task<object> SaveAsync()
+    private static Task<object> SaveAsync()
     {
-        var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Scripting.InvokeOnUpdate(() =>
+        return InvokeOnUpdateAsync(() =>
         {
-            try
-            {
-                FlaxEditor.Editor.Instance.SaveAll();
-                completion.TrySetResult(new { mainThreadId = Environment.CurrentManagedThreadId, saved = true });
-            }
-            catch (Exception ex)
-            {
-                completion.TrySetException(ex);
-            }
+            FlaxEditor.Editor.Instance.SaveAll();
+            return new { mainThreadId = Globals.MainThreadID, saved = true };
         });
-        return await completion.Task;
     }
 
     private static async Task<object> CaptureScreenshotAsync(string path)
