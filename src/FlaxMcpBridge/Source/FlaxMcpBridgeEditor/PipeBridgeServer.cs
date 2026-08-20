@@ -19,7 +19,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 4;
+    private const int ProtocolVersion = 5;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -159,6 +159,7 @@ internal sealed class PipeBridgeServer : IDisposable
                 RequireObjectParam(root, "transform")
             ),
             "save" => await SaveAsync(),
+            "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
@@ -479,6 +480,14 @@ internal sealed class PipeBridgeServer : IDisposable
         public bool Truncated;
     }
 
+    private sealed record PlayModeState(int MainThreadId, bool IsPlayMode, bool IsPaused)
+    {
+        public PlayModeState(bool isPlayMode, bool isPaused)
+            : this(0, isPlayMode, isPaused)
+        {
+        }
+    }
+
     private static Task<object> SaveAsync()
     {
         return InvokeOnUpdateAsync(() =>
@@ -486,6 +495,76 @@ internal sealed class PipeBridgeServer : IDisposable
             FlaxEditor.Editor.Instance.SaveAll();
             return new { mainThreadId = Globals.MainThreadID, saved = true };
         });
+    }
+
+    private static async Task<object> SetPlayModeAsync(string action)
+    {
+        var normalizedAction = action.ToLowerInvariant();
+        var expectedState = normalizedAction switch
+        {
+            "start" => new PlayModeState(true, false),
+            "stop" => new PlayModeState(false, false),
+            "pause" => new PlayModeState(true, true),
+            "resume" => new PlayModeState(true, false),
+            _ => throw new ArgumentException("Play mode action must be start, stop, pause, or resume."),
+        };
+
+        await InvokeOnUpdateAsync(() =>
+        {
+            var editor = FlaxEditor.Editor.Instance;
+            switch (normalizedAction)
+            {
+                case "start":
+                    editor.Simulation.RequestStartPlayScenes();
+                    break;
+                case "stop":
+                    editor.Simulation.RequestStopPlay();
+                    break;
+                case "pause":
+                    editor.Simulation.RequestPausePlay();
+                    break;
+                case "resume":
+                    editor.Simulation.RequestResumePlay();
+                    break;
+            }
+
+            return new object();
+        });
+
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            var state = await ReadPlayModeStateAsync();
+            if (state.IsPlayMode == expectedState.IsPlayMode && state.IsPaused == expectedState.IsPaused)
+            {
+                return new
+                {
+                    mainThreadId = state.MainThreadId,
+                    requestedAction = normalizedAction,
+                    isPlayMode = state.IsPlayMode,
+                    isPaused = state.IsPaused,
+                };
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException($"The Flax Editor did not complete the '{normalizedAction}' play mode action.");
+    }
+
+    private static Task<PlayModeState> ReadPlayModeStateAsync()
+    {
+        var tcs = new TaskCompletionSource<PlayModeState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Scripting.InvokeOnUpdate(() =>
+        {
+            var editor = FlaxEditor.Editor.Instance;
+            var playingState = editor.StateMachine.CurrentState as FlaxEditor.States.PlayingState;
+            tcs.TrySetResult(new PlayModeState(
+                Globals.MainThreadID,
+                editor.IsPlayMode,
+                playingState?.IsPaused ?? false
+            ));
+        });
+        return tcs.Task;
     }
 
     private static async Task<object> CaptureScreenshotAsync(string path)

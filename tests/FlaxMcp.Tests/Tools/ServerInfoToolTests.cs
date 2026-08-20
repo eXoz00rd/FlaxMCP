@@ -83,5 +83,12 @@ public class ServerInfoToolTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
+            string action,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }
