@@ -42,4 +42,16 @@ public sealed class EditorTools
     {
         return _bridgeClient.SetSelectionAsync(actorIds, cancellationToken);
     }
+
+    [McpServerTool(Name = "editor_actor_details", ReadOnly = true, UseStructuredContent = true)]
+    [Description(
+        "Returns live identity, hierarchy, activation, layer, tags, world/local transforms, and scripts " +
+        "for one actor loaded in the Flax Editor."
+    )]
+    public Task<FlaxActorDetails> GetActorDetailsAsync(
+        [Description("Actor GUID from editor_scene_graph or editor_get_selection.")] string actorId,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.GetActorDetailsAsync(actorId, cancellationToken);
+    }
 }

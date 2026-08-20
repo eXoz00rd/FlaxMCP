@@ -50,6 +50,44 @@ public sealed class EditorToolsTests
         Assert.Equal(["actor-id"], bridge.ActorIds);
     }
 
+    [Fact]
+    public async Task GetActorDetailsAsync_ForwardsActorId()
+    {
+        var expected = CreateActorDetails();
+        var bridge = new StubBridgeClient { ActorDetails = expected };
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.GetActorDetailsAsync("actor-id", TestContext.Current.CancellationToken);
+
+        Assert.Same(expected, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+    }
+
+    private static FlaxActorDetails CreateActorDetails()
+    {
+        var transform = new FlaxActorTransform(
+            new FlaxVector3(1, 2, 3),
+            new FlaxQuaternion(0, 0, 0, 1),
+            new FlaxVector3(1, 1, 1)
+        );
+        return new FlaxActorDetails(
+            12,
+            "actor-id",
+            "FlaxEngine.Actor",
+            "Player",
+            null,
+            "scene-id",
+            true,
+            true,
+            0,
+            "Default",
+            ["Player"],
+            transform,
+            transform,
+            []
+        );
+    }
+
     private sealed class StubBridgeClient : IFlaxBridgeClient
     {
         private readonly FlaxLiveSceneGraph _sceneGraph;
@@ -57,6 +95,10 @@ public sealed class EditorToolsTests
         public FlaxEditorSelection Selection { get; set; } = new(0, []);
 
         public IReadOnlyList<string>? ActorIds { get; private set; }
+
+        public FlaxActorDetails ActorDetails { get; set; } = CreateActorDetails();
+
+        public string? ActorId { get; private set; }
 
         public StubBridgeClient()
             : this(new FlaxLiveSceneGraph(0, [], false))
@@ -101,6 +143,14 @@ public sealed class EditorToolsTests
             CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task<FlaxActorDetails> GetActorDetailsAsync(
+            string actorId,
+            CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            return Task.FromResult(ActorDetails);
         }
     }
 }

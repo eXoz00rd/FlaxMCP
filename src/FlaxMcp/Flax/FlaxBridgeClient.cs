@@ -20,6 +20,8 @@ public interface IFlaxBridgeClient
         IReadOnlyList<string> actorIds,
         CancellationToken cancellationToken = default);
 
+    Task<FlaxActorDetails> GetActorDetailsAsync(string actorId, CancellationToken cancellationToken = default);
+
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
 }
 
@@ -115,6 +117,18 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             RequireHandshake(),
             "set_selection",
             new { actorIds },
+            cancellationToken
+        );
+    }
+
+    public Task<FlaxActorDetails> GetActorDetailsAsync(
+        string actorId,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxActorDetails>(
+            RequireHandshake(),
+            "actor_details",
+            new { actorId },
             cancellationToken
         );
     }
@@ -286,6 +300,33 @@ public sealed record FlaxEditorSelection(
     IReadOnlyList<FlaxEditorSelectionItem> Selected);
 
 public sealed record FlaxEditorSelectionItem(string Id, string TypeName, string Name);
+
+public sealed record FlaxActorDetails(
+    int MainThreadId,
+    string Id,
+    string TypeName,
+    string Name,
+    string? ParentId,
+    string? SceneId,
+    bool IsActive,
+    bool IsActiveInHierarchy,
+    int Layer,
+    string LayerName,
+    IReadOnlyList<string> Tags,
+    FlaxActorTransform Transform,
+    FlaxActorTransform LocalTransform,
+    IReadOnlyList<FlaxActorScript> Scripts);
+
+public sealed record FlaxActorTransform(
+    FlaxVector3 Translation,
+    FlaxQuaternion Orientation,
+    FlaxVector3 Scale);
+
+public sealed record FlaxVector3(double X, double Y, double Z);
+
+public sealed record FlaxQuaternion(double X, double Y, double Z, double W);
+
+public sealed record FlaxActorScript(string Id, string TypeName, bool Enabled, bool IsEnabledInHierarchy);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 
