@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FlaxEngine;
+using FlaxEditor.Windows;
 
 namespace FlaxMcpBridge.Editor;
 
@@ -162,7 +164,36 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static async Task<object> CaptureScreenshotAsync(string path)
     {
-        Scripting.InvokeOnUpdate(() => Screenshot.Capture(path));
+        var captureQueued = new TaskCompletionSource<object>();
+        Scripting.InvokeOnUpdate(() =>
+        {
+            try
+            {
+                if (Engine.IsHeadless)
+                {
+                    throw new InvalidOperationException(
+                        "Screenshot capture is unavailable in headless mode because no rendered viewport output exists.");
+                }
+
+                var sceneWindow = FlaxEditor.Editor.Instance.Windows.Windows
+                    .OfType<SceneEditorWindow>()
+                    .FirstOrDefault(window => window.VisibleInHierarchy);
+                var renderTask = sceneWindow?.Viewport.Task;
+                if (renderTask?.Output is null)
+                {
+                    throw new InvalidOperationException(
+                        "Screenshot capture requires a visible scene viewport; no rendered viewport is available in headless mode.");
+                }
+
+                Screenshot.Capture(renderTask, path);
+                captureQueued.TrySetResult(new object());
+            }
+            catch (Exception ex)
+            {
+                captureQueued.TrySetException(ex);
+            }
+        });
+        await captureQueued.Task;
 
         // Capture is queued for the end of the frame by the engine; poll briefly for the file.
         for (var i = 0; i < 20; i++)
@@ -174,7 +205,7 @@ internal sealed class PipeBridgeServer : IDisposable
             }
         }
 
-        return new { path, bytes = 0, warning = "File not observed within 2s of capture request." };
+        throw new IOException("Screenshot file was not produced within 2 seconds of the viewport capture request.");
     }
 
     private void WriteHandshakeFile()
