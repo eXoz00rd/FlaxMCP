@@ -14,6 +14,7 @@ public sealed class ToolsetsTests
         Assert.Equal(Toolsets.Names.Count, types.Count);
         Assert.Contains(typeof(ServerInfoTool), types);
         Assert.Contains(typeof(ProjectTools), types);
+        Assert.Contains(typeof(EditorTools), types);
     }
 
     [Fact]

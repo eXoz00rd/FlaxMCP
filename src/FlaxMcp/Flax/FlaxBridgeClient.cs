@@ -12,14 +12,14 @@ public interface IFlaxBridgeClient
 
     Task<FlaxBridgePing> PingAsync(CancellationToken cancellationToken = default);
 
-    Task<JsonElement> ListActorsAsync(CancellationToken cancellationToken = default);
+    Task<FlaxLiveSceneGraph> GetSceneGraphAsync(CancellationToken cancellationToken = default);
 
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
 }
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 1;
+    internal const int CurrentProtocolVersion = 2;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNameCaseInsensitive = true };
@@ -91,9 +91,9 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
         return PingAsync(RequireHandshake(), cancellationToken);
     }
 
-    public Task<JsonElement> ListActorsAsync(CancellationToken cancellationToken = default)
+    public Task<FlaxLiveSceneGraph> GetSceneGraphAsync(CancellationToken cancellationToken = default)
     {
-        return CallAsync<JsonElement>(RequireHandshake(), "list_actors", null, cancellationToken);
+        return CallAsync<FlaxLiveSceneGraph>(RequireHandshake(), "scene_graph", null, cancellationToken);
     }
 
     public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default)
@@ -246,6 +246,17 @@ public sealed record FlaxBridgeStatus(
 public sealed record FlaxBridgePing(bool Pong, DateTime UtcNow);
 
 public sealed record FlaxBridgeScreenshot(string Path, long Bytes);
+
+public sealed record FlaxLiveSceneGraph(
+    int MainThreadId,
+    IReadOnlyList<FlaxLiveSceneNode> Scenes,
+    bool Truncated);
+
+public sealed record FlaxLiveSceneNode(
+    string Id,
+    string TypeName,
+    string? Name,
+    IReadOnlyList<FlaxLiveSceneNode> Children);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 

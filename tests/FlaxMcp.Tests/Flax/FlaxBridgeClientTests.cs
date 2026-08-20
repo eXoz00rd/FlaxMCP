@@ -100,7 +100,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
     [Fact]
     public async Task PingAsync_WithMismatchedProtocol_ReportsVersions()
     {
-        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 2);
+        WriteHandshake("unused", DateTime.UtcNow, protocolVersion: 3);
         var client = new FlaxBridgeClient(_projectFolder, _tempDir);
 
         var exception =
@@ -108,8 +108,8 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 1", exception.Message);
-        Assert.Contains("plugin reports version 2", exception.Message);
+        Assert.Contains("server requires version 2", exception.Message);
+        Assert.Contains("plugin reports version 3", exception.Message);
     }
 
     [Fact]
@@ -166,6 +166,29 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Contains("disconnected before returning a response", exception.Message);
     }
 
+    [Fact]
+    public async Task GetSceneGraphAsync_ReturnsTypedLiveTree()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"scenes\":[{\"id\":\"scene-id\",\"typeName\":\"FlaxEngine.Scene\",\"name\":\"Main\",\"children\":[{\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.Actor\",\"name\":\"Player\",\"children\":[]}]}],\"truncated\":false}}",
+            TestContext.Current.CancellationToken,
+            "scene_graph"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var graph = await client.GetSceneGraphAsync(TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(7, graph.MainThreadId);
+        var scene = Assert.Single(graph.Scenes);
+        Assert.Equal("Main", scene.Name);
+        Assert.Equal("Player", Assert.Single(scene.Children).Name);
+        Assert.False(graph.Truncated);
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
@@ -178,7 +201,8 @@ public sealed class FlaxBridgeClientTests : IDisposable
     private static async Task ServeResponseAsync(
         string pipeName,
         string response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string method = "ping")
     {
         await using var pipe = new NamedPipeServerStream(
             pipeName,
@@ -201,7 +225,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
             NewLine = "\n",
         };
         var request = await reader.ReadLineAsync(cancellationToken);
-        Assert.Contains("\"method\":\"ping\"", request);
+        Assert.Contains($"\"method\":\"{method}\"", request);
         await writer.WriteLineAsync(response);
     }
 
@@ -225,7 +249,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 1)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 2)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(
