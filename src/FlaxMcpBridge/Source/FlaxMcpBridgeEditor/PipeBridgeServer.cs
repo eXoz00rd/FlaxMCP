@@ -89,14 +89,23 @@ internal sealed class PipeBridgeServer : IDisposable
             {
                 using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
                 requestTimeout.CancelAfter(RequestTimeout);
-                responseJson = await DispatchAsync(line).WaitAsync(requestTimeout.Token);
+                var dispatchTask = DispatchAsync(line);
+                try
+                {
+                    responseJson = await dispatchTask.WaitAsync(requestTimeout.Token);
+                }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                {
+                    ObserveFault(dispatchTask);
+                    throw;
+                }
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
             {
                 responseJson = SerializeError(
                     ReadRequestId(line),
                     "request_timeout",
-                    "The editor action did not complete within 5 seconds."
+                    $"The editor action did not complete within {RequestTimeout.TotalSeconds:0} seconds."
                 );
             }
             catch (Exception ex)
@@ -113,10 +122,19 @@ internal sealed class PipeBridgeServer : IDisposable
     {
         using var document = JsonDocument.Parse(requestJson);
         var root = document.RootElement;
-        var id = root.TryGetProperty("id", out var idElement) ? idElement.GetInt32() : 0;
-        var protocolVersion = root.TryGetProperty("protocolVersion", out var versionElement) ?
-            versionElement.GetInt32() :
-            0;
+        var id = 0;
+        if (root.TryGetProperty("id", out var idElement) && !idElement.TryGetInt32(out id))
+        {
+            return SerializeError(0, "invalid_request", "Request id must be a 32-bit integer.");
+        }
+
+        var protocolVersion = 0;
+        if (root.TryGetProperty("protocolVersion", out var versionElement) &&
+            !versionElement.TryGetInt32(out protocolVersion))
+        {
+            return SerializeError(id, "invalid_request", "Protocol version must be a 32-bit integer.");
+        }
+
         if (protocolVersion != ProtocolVersion)
         {
             return SerializeError(
@@ -143,12 +161,24 @@ internal sealed class PipeBridgeServer : IDisposable
         return JsonSerializer.Serialize(new { id, error = new { code, message } });
     }
 
+    private static void ObserveFault(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask => _ = completedTask.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
     private static int ReadRequestId(string requestJson)
     {
         try
         {
             using var document = JsonDocument.Parse(requestJson);
-            return document.RootElement.TryGetProperty("id", out var id) ? id.GetInt32() : 0;
+            return document.RootElement.TryGetProperty("id", out var id) && id.TryGetInt32(out var value) ?
+                value :
+                0;
         }
         catch (JsonException)
         {

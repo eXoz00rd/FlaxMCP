@@ -173,6 +173,10 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
                 $"{(timeout == ConnectionTimeout ? "second" : "seconds")}."
             );
         }
+        catch (IOException ex) when (connected)
+        {
+            throw new IOException("The Flax Editor bridge disconnected before returning a response.", ex);
+        }
     }
 
     private FlaxBridgeHandshake RequireHandshake()
