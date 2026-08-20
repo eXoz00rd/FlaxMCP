@@ -164,7 +164,7 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static async Task<object> CaptureScreenshotAsync(string path)
     {
-        var captureQueued = new TaskCompletionSource<object>();
+        var captureQueued = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         Scripting.InvokeOnUpdate(() =>
         {
             try
@@ -182,7 +182,7 @@ internal sealed class PipeBridgeServer : IDisposable
                 if (renderTask?.Output is null)
                 {
                     throw new InvalidOperationException(
-                        "Screenshot capture requires a visible scene viewport; no rendered viewport is available in headless mode.");
+                        "Screenshot capture requires a visible scene viewport with allocated render output.");
                 }
 
                 Screenshot.Capture(renderTask, path);
