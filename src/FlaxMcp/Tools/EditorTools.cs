@@ -54,4 +54,26 @@ public sealed class EditorTools
     {
         return _bridgeClient.GetActorDetailsAsync(actorId, cancellationToken);
     }
+
+    [McpServerTool(Name = "editor_modify_actor", UseStructuredContent = true)]
+    [Description(
+        "Replaces an existing live actor's world transform and returns its updated details. " +
+        "Use editor_actor_details first to preserve transform values that should not change."
+    )]
+    public Task<FlaxActorDetails> ModifyActorAsync(
+        [Description("Actor GUID from editor_scene_graph or editor_get_selection.")] string actorId,
+        [Description("Replacement world-space translation.")]
+        FlaxVector3 translation,
+        [Description("Replacement world-space orientation quaternion.")]
+        FlaxQuaternion orientation,
+        [Description("Replacement world-space scale.")]
+        FlaxVector3 scale,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.ModifyActorAsync(
+            actorId,
+            new FlaxActorTransform(translation, orientation, scale),
+            cancellationToken
+        );
+    }
 }

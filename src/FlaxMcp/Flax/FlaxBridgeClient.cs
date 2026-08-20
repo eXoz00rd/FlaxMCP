@@ -22,15 +22,26 @@ public interface IFlaxBridgeClient
 
     Task<FlaxActorDetails> GetActorDetailsAsync(string actorId, CancellationToken cancellationToken = default);
 
+    Task<FlaxActorDetails> ModifyActorAsync(
+        string actorId,
+        FlaxActorTransform transform,
+        CancellationToken cancellationToken = default);
+
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
 }
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 2;
+    internal const int CurrentProtocolVersion = 3;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
-    private static readonly JsonSerializerOptions SerializerOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     private readonly string _projectFolder;
     private readonly string _sessionsDirectory;
 
@@ -133,6 +144,19 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
         );
     }
 
+    public Task<FlaxActorDetails> ModifyActorAsync(
+        string actorId,
+        FlaxActorTransform transform,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxActorDetails>(
+            RequireHandshake(),
+            "modify_actor",
+            new { actorId, transform },
+            cancellationToken
+        );
+    }
+
     public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default)
     {
         return CallAsync<FlaxBridgeScreenshot>(RequireHandshake(), "screenshot", new { path }, cancellationToken);
@@ -181,7 +205,8 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             requestTimeout.CancelAfter(RequestTimeout);
             await writer.WriteLineAsync(
                 JsonSerializer.Serialize(
-                    new { protocolVersion = CurrentProtocolVersion, id = 1, method, @params = parameters }
+                    new { protocolVersion = CurrentProtocolVersion, id = 1, method, @params = parameters },
+                    SerializerOptions
                 )
             );
             var responseLine = await reader.ReadLineAsync(requestTimeout.Token) ??

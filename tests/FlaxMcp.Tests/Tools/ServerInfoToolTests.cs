@@ -70,5 +70,13 @@ public class ServerInfoToolTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<FlaxActorDetails> ModifyActorAsync(
+            string actorId,
+            FlaxActorTransform transform,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }
