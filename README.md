@@ -79,7 +79,7 @@ it requires a GUI editor with a rendered viewport and does not work headlessly. 
 ## Requirements
 
 - .NET 10 SDK
-- Flax Engine 1.12 or newer installed locally
+- Flax Engine 1.12.6912 or newer installed locally
 - a Flax project (`.flaxproj`)
 - the companion plugin installed in that project for live editor tools
 
