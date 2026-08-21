@@ -111,6 +111,19 @@ public sealed class EditorToolsTests
         Assert.Equal("pause", bridge.PlayModeAction);
     }
 
+    [Fact]
+    public async Task ExecuteCSharpAsync_ForwardsCode()
+    {
+        var expected = new FlaxCodeExecutionResult(12, "System.Int32", null);
+        var bridge = new StubBridgeClient { CodeExecutionResult = expected };
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.ExecuteCSharpAsync("return 42;", TestContext.Current.CancellationToken);
+
+        Assert.Same(expected, result);
+        Assert.Equal("return 42;", bridge.Code);
+    }
+
     private static FlaxActorDetails CreateActorDetails()
     {
         var transform = new FlaxActorTransform(
@@ -155,6 +168,10 @@ public sealed class EditorToolsTests
         public FlaxEditorPlayModeResult PlayModeResult { get; set; } = new(0, "stop", false, false);
 
         public string? PlayModeAction { get; private set; }
+
+        public FlaxCodeExecutionResult CodeExecutionResult { get; set; } = new(0, null, null);
+
+        public string? Code { get; private set; }
 
         public StubBridgeClient()
             : this(new FlaxLiveSceneGraph(0, [], false))
@@ -230,6 +247,14 @@ public sealed class EditorToolsTests
         {
             PlayModeAction = action;
             return Task.FromResult(PlayModeResult);
+        }
+
+        public Task<FlaxCodeExecutionResult> ExecuteCSharpAsync(
+            string code,
+            CancellationToken cancellationToken = default)
+        {
+            Code = code;
+            return Task.FromResult(CodeExecutionResult);
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FlaxMcp.Configuration;
 using FlaxMcp.Flax;
 using ModelContextProtocol.Server;
 
@@ -93,5 +94,18 @@ public sealed class EditorTools
         CancellationToken cancellationToken)
     {
         return _bridgeClient.SetPlayModeAsync(action, cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_execute_csharp", UseStructuredContent = true)]
+    [RequiresCodeExecution]
+    [Description(
+        "DANGER: Compiles and executes arbitrary C# with the Flax Editor process's full machine permissions. " +
+        "The code is the body of a static method, runs on the editor main thread, and must return a JSON-serializable value."
+    )]
+    public Task<FlaxCodeExecutionResult> ExecuteCSharpAsync(
+        [Description("C# method body, for example: return FlaxEngine.Globals.EngineBuildNumber;")] string code,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.ExecuteCSharpAsync(code, cancellationToken);
     }
 }
