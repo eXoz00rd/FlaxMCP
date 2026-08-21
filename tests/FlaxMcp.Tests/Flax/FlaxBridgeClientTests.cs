@@ -108,7 +108,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 5", exception.Message);
+        Assert.Contains("server requires version 6", exception.Message);
         Assert.Contains("plugin reports version 3", exception.Message);
     }
 
@@ -321,6 +321,28 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(new FlaxEditorPlayModeResult(7, "pause", true, true), result);
     }
 
+    [Fact]
+    public async Task ExecuteCSharpAsync_SendsCodeAndReturnsTypedResult()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"typeName\":\"System.Int32\",\"result\":42}}",
+            TestContext.Current.CancellationToken,
+            "execute_csharp",
+            "\"code\":\"return 42;\""
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.ExecuteCSharpAsync("return 42;", TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(7, result.MainThreadId);
+        Assert.Equal("System.Int32", result.TypeName);
+        Assert.Equal(42, result.Result?.GetInt32());
+    }
+
     private async Task ServePingAsync(string pipeName, CancellationToken cancellationToken)
     {
         await ServeResponseAsync(
@@ -387,7 +409,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 5)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 6)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(

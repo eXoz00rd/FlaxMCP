@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +11,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using FlaxEngine;
 using FlaxEditor.Windows;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace FlaxMcpBridge.Editor;
 
@@ -19,7 +22,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 5;
+    private const int ProtocolVersion = 6;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -161,6 +164,7 @@ internal sealed class PipeBridgeServer : IDisposable
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
+            "execute_csharp" => await ExecuteCSharpAsync(RequireParam(root, "code")),
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
 
@@ -559,8 +563,8 @@ internal sealed class PipeBridgeServer : IDisposable
             var editor = FlaxEditor.Editor.Instance;
             var playingState = editor.StateMachine.CurrentState as FlaxEditor.States.PlayingState;
             tcs.TrySetResult(new PlayModeState(
-                Globals.MainThreadID,
-                editor.IsPlayMode,
+                checked((int)Globals.MainThreadID),
+                FlaxEditor.Editor.IsPlayMode,
                 playingState?.IsPaused ?? false
             ));
         });
@@ -611,6 +615,70 @@ internal sealed class PipeBridgeServer : IDisposable
         }
 
         throw new IOException("Screenshot file was not produced within 2 seconds of the viewport capture request.");
+    }
+
+    private static async Task<object> ExecuteCSharpAsync(string code)
+    {
+        const string typeName = "FlaxMcpBridge.Dynamic.CodeExecution";
+        var source = $$"""
+            using System;
+            using System.Collections.Generic;
+            using System.Linq;
+            using FlaxEngine;
+            using FlaxEditor;
+
+            namespace FlaxMcpBridge.Dynamic;
+
+            public static class CodeExecution
+            {
+                public static object? Execute()
+                {
+                    {{code}}
+                }
+            }
+            """;
+        var references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
+            .Select(assembly => assembly.Location)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(path => MetadataReference.CreateFromFile(path));
+        var compilation = CSharpCompilation.Create(
+            "FlaxMcpDynamic_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source)],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        using var assemblyStream = new MemoryStream();
+        var emitResult = compilation.Emit(assemblyStream);
+        if (!emitResult.Success)
+        {
+            var errors = emitResult.Diagnostics
+                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                .Select(diagnostic => diagnostic.ToString());
+            throw new InvalidOperationException("C# compilation failed: " + string.Join(Environment.NewLine, errors));
+        }
+
+        var assembly = Assembly.Load(assemblyStream.ToArray());
+        var method = assembly.GetType(typeName)?.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static) ??
+            throw new InvalidOperationException("Compiled C# entry point was not found.");
+        var execution = await InvokeOnUpdateAsync(() =>
+        {
+            try
+            {
+                var result = method.Invoke(null, null);
+                return new
+                {
+                    mainThreadId = Globals.MainThreadID,
+                    typeName = result?.GetType().FullName,
+                    result,
+                };
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is not null)
+            {
+                throw ex.InnerException;
+            }
+        });
+        return execution;
     }
 
     private void WriteHandshakeFile()

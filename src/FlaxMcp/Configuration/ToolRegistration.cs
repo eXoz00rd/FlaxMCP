@@ -12,7 +12,7 @@ public static class ToolRegistration
 
         foreach (var toolType in Toolsets.Resolve(options.Toolsets))
         {
-            foreach (var method in SelectMethods(toolType, options.ReadOnly))
+            foreach (var method in SelectMethods(toolType, options))
             {
                 var capturedType = toolType;
                 var capturedMethod = method;
@@ -29,11 +29,17 @@ public static class ToolRegistration
         return registered;
     }
 
-    private static IEnumerable<MethodInfo> SelectMethods(Type toolType, bool readOnly)
+    private static IEnumerable<MethodInfo> SelectMethods(Type toolType, FlaxMcpOptions options)
     {
         return toolType
                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
                .Where(method => method.GetCustomAttribute<McpServerToolAttribute>() is { } attribute &&
-                   (!readOnly || attribute.ReadOnly == true));
+                   (!options.ReadOnly || attribute.ReadOnly) &&
+                   (method.GetCustomAttribute<RequiresCodeExecutionAttribute>() is null ||
+                       options.AllowCodeExecution && !options.ReadOnly)
+               );
     }
 }
+
+[AttributeUsage(AttributeTargets.Method)]
+internal sealed class RequiresCodeExecutionAttribute : Attribute;

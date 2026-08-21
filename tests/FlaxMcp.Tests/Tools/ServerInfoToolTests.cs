@@ -90,5 +90,12 @@ public class ServerInfoToolTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<FlaxCodeExecutionResult> ExecuteCSharpAsync(
+            string code,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

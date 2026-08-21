@@ -30,6 +30,7 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_modify_actor");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_save");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_play_mode");
+        Assert.DoesNotContain(tools, tool => tool.ProtocolTool.Name == "editor_execute_csharp");
     }
 
     [Fact]
@@ -60,6 +61,25 @@ public sealed class ToolRegistrationTests
         Assert.DoesNotContain("editor_modify_actor", names);
         Assert.DoesNotContain("editor_save", names);
         Assert.DoesNotContain("editor_play_mode", names);
+        Assert.DoesNotContain("editor_execute_csharp", names);
+    }
+
+    [Fact]
+    public void AddTools_WithCodeExecutionEnabled_RegistersExecuteCSharp()
+    {
+        var names = Register(new FlaxMcpOptions { AllowCodeExecution = true })
+            .Select(tool => tool.ProtocolTool.Name);
+
+        Assert.Contains("editor_execute_csharp", names);
+    }
+
+    [Fact]
+    public void AddTools_WithCodeExecutionAndReadOnly_ExcludesExecuteCSharp()
+    {
+        var names = Register(new FlaxMcpOptions { AllowCodeExecution = true, ReadOnly = true })
+            .Select(tool => tool.ProtocolTool.Name);
+
+        Assert.DoesNotContain("editor_execute_csharp", names);
     }
 
     [Fact]

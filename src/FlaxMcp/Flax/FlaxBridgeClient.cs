@@ -34,11 +34,13 @@ public interface IFlaxBridgeClient
         CancellationToken cancellationToken = default);
 
     Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default);
+
+    Task<FlaxCodeExecutionResult> ExecuteCSharpAsync(string code, CancellationToken cancellationToken = default);
 }
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 5;
+    internal const int CurrentProtocolVersion = 6;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -183,6 +185,18 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(string path, CancellationToken cancellationToken = default)
     {
         return CallAsync<FlaxBridgeScreenshot>(RequireHandshake(), "screenshot", new { path }, cancellationToken);
+    }
+
+    public Task<FlaxCodeExecutionResult> ExecuteCSharpAsync(
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxCodeExecutionResult>(
+            RequireHandshake(),
+            "execute_csharp",
+            new { code },
+            cancellationToken
+        );
     }
 
     private Task<FlaxBridgePing> PingAsync(FlaxBridgeHandshake handshake, CancellationToken cancellationToken)
@@ -331,6 +345,8 @@ public sealed record FlaxBridgeStatus(
 public sealed record FlaxBridgePing(bool Pong, DateTime UtcNow);
 
 public sealed record FlaxBridgeScreenshot(string Path, long Bytes);
+
+public sealed record FlaxCodeExecutionResult(int MainThreadId, string? TypeName, JsonElement? Result);
 
 public sealed record FlaxEditorSaveResult(int MainThreadId, bool Saved);
 
