@@ -35,8 +35,10 @@ startupOptions.LoadFromEnvironment();
 
 var toolCount = ToolRegistration.AddTools(builder.Services, startupOptions);
 
-builder.Services
-       .AddMcpServer(options => options.ServerInstructions = ServerInstructions.Build(startupOptions, toolCount))
-       .WithStdioServerTransport();
+var mcpServer = builder.Services
+                       .AddMcpServer(options => options.ServerInstructions = ServerInstructions.Build(startupOptions, toolCount));
+
+PromptRegistration.AddPrompts(mcpServer, startupOptions);
+mcpServer.WithStdioServerTransport();
 
 await builder.Build().RunAsync();
