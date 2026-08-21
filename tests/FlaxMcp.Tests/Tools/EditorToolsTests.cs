@@ -112,6 +112,41 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task CaptureScreenshotAsync_ForwardsResolvedPngPath()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var path = Path.Combine(Path.GetTempPath(), "viewport.png");
+
+        var result = await tool.CaptureScreenshotAsync(path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(Path.GetFullPath(path), bridge.ScreenshotPath);
+        Assert.Equal(Path.GetFullPath(path), result.Path);
+        Assert.Equal(123, result.Bytes);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("viewport.jpg")]
+    public async Task CaptureScreenshotAsync_WithInvalidPath_Throws(string path)
+    {
+        var tool = new EditorTools(new StubBridgeClient());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            tool.CaptureScreenshotAsync(path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CaptureScreenshotAsync_WithMissingDirectory_Throws()
+    {
+        var tool = new EditorTools(new StubBridgeClient());
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "viewport.png");
+
+        await Assert.ThrowsAsync<DirectoryNotFoundException>(() =>
+            tool.CaptureScreenshotAsync(path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task ExecuteCSharpAsync_ForwardsCode()
     {
         var expected = new FlaxCodeExecutionResult(12, "System.Int32", null);
@@ -169,6 +204,8 @@ public sealed class EditorToolsTests
 
         public string? PlayModeAction { get; private set; }
 
+        public string? ScreenshotPath { get; private set; }
+
         public FlaxCodeExecutionResult CodeExecutionResult { get; set; } = new(0, null, null);
 
         public string? Code { get; private set; }
@@ -215,7 +252,8 @@ public sealed class EditorToolsTests
             string path,
             CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException();
+            ScreenshotPath = path;
+            return Task.FromResult(new FlaxBridgeScreenshot(path, 123));
         }
 
         public Task<FlaxActorDetails> GetActorDetailsAsync(

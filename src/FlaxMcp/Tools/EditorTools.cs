@@ -96,6 +96,32 @@ public sealed class EditorTools
         return _bridgeClient.SetPlayModeAsync(action, cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_screenshot", UseStructuredContent = true)]
+    [Description(
+        "Captures the visible Flax Editor scene viewport to a PNG file. " +
+        "The output directory must already exist, and capture is unavailable in headless mode."
+    )]
+    public Task<FlaxBridgeScreenshot> CaptureScreenshotAsync(
+        [Description("Absolute or current-working-directory-relative output path ending in .png.")] string path,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var resolvedPath = Path.GetFullPath(path);
+        if (!string.Equals(Path.GetExtension(resolvedPath), ".png", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Screenshot output path must use the .png extension.", nameof(path));
+        }
+
+        var directory = Path.GetDirectoryName(resolvedPath)!;
+        if (!Directory.Exists(directory))
+        {
+            throw new DirectoryNotFoundException($"Screenshot output directory does not exist: {directory}");
+        }
+
+        return _bridgeClient.CaptureScreenshotAsync(resolvedPath, cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_execute_csharp", UseStructuredContent = true)]
     [RequiresCodeExecution]
     [Description(
