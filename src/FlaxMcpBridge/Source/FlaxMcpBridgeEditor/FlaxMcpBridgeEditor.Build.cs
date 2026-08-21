@@ -11,6 +11,7 @@ public class FlaxMcpBridgeEditor : GameEditorModule
 
         options.PublicDependencies.Add("FlaxMcpBridge");
         options.ScriptingAPI.SystemReferences.Add("System.IO.Pipes");
+        options.ScriptingAPI.SystemReferences.Add("System.Runtime.Loader");
         options.ScriptingAPI.SystemReferences.Add("System.Text.Json");
         options.ScriptingAPI.SystemReferences.Add("System.Text.Encoding.Extensions");
         options.ScriptingAPI.FileReferences.Add(Path.Combine(Globals.EngineRoot, "Binaries", "Tools", "Microsoft.CodeAnalysis.dll"));

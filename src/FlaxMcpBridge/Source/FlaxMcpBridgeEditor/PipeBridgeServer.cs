@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -637,8 +638,10 @@ internal sealed class PipeBridgeServer : IDisposable
                 }
             }
             """;
-        var references = AppDomain.CurrentDomain.GetAssemblies()
+        var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
             .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
+            .ToArray();
+        var references = loadedAssemblies
             .Select(assembly => assembly.Location)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(path => MetadataReference.CreateFromFile(path));
@@ -658,27 +661,40 @@ internal sealed class PipeBridgeServer : IDisposable
             throw new InvalidOperationException("C# compilation failed: " + string.Join(Environment.NewLine, errors));
         }
 
-        var assembly = Assembly.Load(assemblyStream.ToArray());
-        var method = assembly.GetType(typeName)?.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static) ??
-            throw new InvalidOperationException("Compiled C# entry point was not found.");
-        var execution = await InvokeOnUpdateAsync(() =>
+        assemblyStream.Position = 0;
+        var loadContext = new AssemblyLoadContext(compilation.AssemblyName, isCollectible: true);
+        loadContext.Resolving += (_, assemblyName) => loadedAssemblies.FirstOrDefault(
+            assembly => AssemblyName.ReferenceMatchesDefinition(assembly.GetName(), assemblyName)
+        );
+        try
         {
-            try
+            var assembly = loadContext.LoadFromStream(assemblyStream);
+            var method = assembly.GetType(typeName)?.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static) ??
+                throw new InvalidOperationException("Compiled C# entry point was not found.");
+            return await InvokeOnUpdateAsync(() =>
             {
-                var result = method.Invoke(null, null);
-                return new
+                try
                 {
-                    mainThreadId = Globals.MainThreadID,
-                    typeName = result?.GetType().FullName,
-                    result,
-                };
-            }
-            catch (TargetInvocationException ex) when (ex.InnerException is not null)
-            {
-                throw ex.InnerException;
-            }
-        });
-        return execution;
+                    var result = method.Invoke(null, null);
+                    return new
+                    {
+                        mainThreadId = checked((int)Globals.MainThreadID),
+                        typeName = result?.GetType().FullName,
+                        result = result is null ?
+                            (JsonElement?)null :
+                            JsonSerializer.SerializeToElement(result, result.GetType()),
+                    };
+                }
+                catch (TargetInvocationException ex) when (ex.InnerException is not null)
+                {
+                    throw ex.InnerException;
+                }
+            });
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
     }
 
     private void WriteHandshakeFile()
