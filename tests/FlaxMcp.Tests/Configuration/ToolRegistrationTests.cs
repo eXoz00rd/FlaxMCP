@@ -35,6 +35,9 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_delete_actor");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_static_model_details");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_set_static_model");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_box_collider_details");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_create_box_collider");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_set_box_collider");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_save");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_play_mode");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_screenshot");
@@ -74,6 +77,9 @@ public sealed class ToolRegistrationTests
         Assert.DoesNotContain("editor_delete_actor", names);
         Assert.Contains("editor_static_model_details", names);
         Assert.DoesNotContain("editor_set_static_model", names);
+        Assert.Contains("editor_box_collider_details", names);
+        Assert.DoesNotContain("editor_create_box_collider", names);
+        Assert.DoesNotContain("editor_set_box_collider", names);
         Assert.DoesNotContain("editor_save", names);
         Assert.DoesNotContain("editor_play_mode", names);
         Assert.DoesNotContain("editor_screenshot", names);

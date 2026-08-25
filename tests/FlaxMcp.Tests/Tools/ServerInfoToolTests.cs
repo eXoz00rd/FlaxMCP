@@ -121,6 +121,26 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
+            string actorId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxBoxColliderDetails> CreateBoxColliderAsync(
+            string parentId, string name, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxBoxColliderDetails> SetBoxColliderAsync(
+            string actorId, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

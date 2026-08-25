@@ -23,7 +23,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 10;
+    private const int ProtocolVersion = 11;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private const double AssetLoadTimeoutMilliseconds = 3500;
@@ -186,6 +186,16 @@ internal sealed class PipeBridgeServer : IDisposable
             "static_model_details" => await GetStaticModelDetailsAsync(RequireParam(root, "actorId")),
             "set_static_model" => await SetStaticModelAsync(
                 RequireParam(root, "actorId"), RequireParam(root, "modelId")
+            ),
+            "box_collider_details" => await GetBoxColliderDetailsAsync(RequireParam(root, "actorId")),
+            "create_box_collider" => await CreateBoxColliderAsync(
+                RequireParam(root, "parentId"), RequireParam(root, "name"),
+                RequireObjectParam(root, "size"), RequireObjectParam(root, "center"),
+                RequireBoolParam(root, "isTrigger")
+            ),
+            "set_box_collider" => await SetBoxColliderAsync(
+                RequireParam(root, "actorId"), RequireObjectParam(root, "size"),
+                RequireObjectParam(root, "center"), RequireBoolParam(root, "isTrigger")
             ),
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
@@ -581,6 +591,115 @@ internal sealed class PipeBridgeServer : IDisposable
             modelPath = model?.Path,
             modelIsLoaded = model?.IsLoaded ?? false,
         };
+    }
+
+    private static Task<object> GetBoxColliderDetailsAsync(string actorId)
+    {
+        return InvokeOnUpdateAsync(() => BuildBoxColliderDetails(FindBoxCollider(actorId)));
+    }
+
+    private static Task<object> CreateBoxColliderAsync(
+        string parentId, string name, JsonElement size, JsonElement center, bool isTrigger)
+    {
+        var properties = ReadBoxColliderProperties(size, center, isTrigger);
+        return InvokeOnUpdateAsync(() =>
+        {
+            ValidateActorName(name);
+            var parent = ResolveDestination(null, parentId);
+            var actor = new BoxCollider
+            {
+                Size = properties.Size,
+                Center = properties.Center,
+                IsTrigger = properties.IsTrigger,
+            };
+            SpawnActor(actor, name, parent, parent.Transform);
+            return BuildBoxColliderDetails(actor);
+        });
+    }
+
+    private static Task<object> SetBoxColliderAsync(
+        string actorId, JsonElement size, JsonElement center, bool isTrigger)
+    {
+        var properties = ReadBoxColliderProperties(size, center, isTrigger);
+        return InvokeOnUpdateAsync(() =>
+        {
+            var actor = FindBoxCollider(actorId);
+            FlaxEditor.Editor.Instance.SceneEditing.Undo.RecordAction(actor, "Set box collider", () =>
+            {
+                actor.Size = properties.Size;
+                actor.Center = properties.Center;
+                actor.IsTrigger = properties.IsTrigger;
+                MarkSceneEdited(actor);
+            });
+            return BuildBoxColliderDetails(actor);
+        });
+    }
+
+    private static BoxCollider FindBoxCollider(string actorId)
+    {
+        return FindActor(actorId) as BoxCollider ??
+            throw new InvalidOperationException($"Actor '{actorId}' is not a FlaxEngine.BoxCollider.");
+    }
+
+    private static (Float3 Size, Vector3 Center, bool IsTrigger) ReadBoxColliderProperties(
+        JsonElement size, JsonElement center, bool isTrigger)
+    {
+        var parsedSize = ReadFloat3(size);
+        var parsedCenter = ReadVector3(center);
+        if (!IsFinite(parsedSize) || parsedSize.X <= 0 || parsedSize.Y <= 0 || parsedSize.Z <= 0)
+        {
+            throw new ArgumentException("BoxCollider size components must be finite and greater than zero.");
+        }
+        if (!IsFinite(parsedCenter))
+        {
+            throw new ArgumentException("BoxCollider center components must be finite.");
+        }
+        return (parsedSize, parsedCenter, isTrigger);
+    }
+
+    private static Float3 ReadFloat3(JsonElement value)
+    {
+        return new Float3(
+            value.GetProperty("x").GetSingle(),
+            value.GetProperty("y").GetSingle(),
+            value.GetProperty("z").GetSingle()
+        );
+    }
+
+    private static Vector3 ReadVector3(JsonElement value)
+    {
+        return new Vector3(
+            value.GetProperty("x").GetSingle(),
+            value.GetProperty("y").GetSingle(),
+            value.GetProperty("z").GetSingle()
+        );
+    }
+
+    private static bool IsFinite(Float3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
+
+    private static object BuildBoxColliderDetails(BoxCollider actor)
+    {
+        return new
+        {
+            mainThreadId = Globals.MainThreadID,
+            actor = BuildActorDetails(actor),
+            size = BuildVector3(actor.Size.X, actor.Size.Y, actor.Size.Z),
+            center = BuildVector3(actor.Center.X, actor.Center.Y, actor.Center.Z),
+            isTrigger = actor.IsTrigger,
+        };
+    }
+
+    private static object BuildVector3(float x, float y, float z)
+    {
+        return new { x, y, z };
     }
 
     private static Actor FindActor(string actorId)

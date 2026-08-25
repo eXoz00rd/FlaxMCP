@@ -202,6 +202,84 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task CreateBoxColliderAsync_ForwardsTypedProperties()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var size = new FlaxVector3(100, 20, 50);
+        var center = new FlaxVector3(0, 10, 0);
+
+        var result = await tool.CreateBoxColliderAsync(
+            "parent-id", "Collision", size, center, true, TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.BoxColliderDetails, result);
+        Assert.Equal("parent-id", bridge.ParentId);
+        Assert.Equal("Collision", bridge.ActorName);
+        Assert.Equal(size, bridge.ColliderSize);
+        Assert.Equal(center, bridge.ColliderCenter);
+        Assert.True(bridge.IsTrigger);
+    }
+
+    [Fact]
+    public async Task SetBoxColliderAsync_ForwardsTypedProperties()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var size = new FlaxVector3(80, 30, 40);
+        var center = new FlaxVector3(1, 2, 3);
+
+        var result = await tool.SetBoxColliderAsync(
+            "collider-id", size, center, false, TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.BoxColliderDetails, result);
+        Assert.Equal("collider-id", bridge.ActorId);
+        Assert.Equal(size, bridge.ColliderSize);
+        Assert.Equal(center, bridge.ColliderCenter);
+        Assert.False(bridge.IsTrigger);
+    }
+
+    [Theory]
+    [InlineData(true, 0)]
+    [InlineData(true, -1)]
+    [InlineData(true, double.NaN)]
+    [InlineData(true, double.PositiveInfinity)]
+    [InlineData(false, double.NaN)]
+    [InlineData(false, double.NegativeInfinity)]
+    public async Task BoxColliderMutation_WithInvalidVector_RejectsBeforeBridge(
+        bool invalidSize, double value)
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var size = new FlaxVector3(invalidSize ? value : 1, 1, 1);
+        var center = new FlaxVector3(invalidSize ? 0 : value, 0, 0);
+
+        Task Action() => invalidSize
+            ? tool.CreateBoxColliderAsync(
+                "parent-id", "Collision", size, center, false, TestContext.Current.CancellationToken)
+            : tool.SetBoxColliderAsync(
+                "collider-id", size, center, false, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<ArgumentException>(Action);
+        Assert.Null(bridge.ParentId);
+        Assert.Null(bridge.ActorId);
+    }
+
+    [Fact]
+    public async Task CreateBoxColliderAsync_WithMissingParent_PropagatesBridgeErrorWithoutResult()
+    {
+        var expected = new KeyNotFoundException("Parent actor 'missing' is not loaded in the editor.");
+        var bridge = new StubBridgeClient { CreateBoxColliderException = expected };
+        var tool = new EditorTools(bridge);
+
+        var exception = await Assert.ThrowsAsync<KeyNotFoundException>(() => tool.CreateBoxColliderAsync(
+            "missing", "Collision", new FlaxVector3(1, 1, 1), new FlaxVector3(0, 0, 0), false,
+            TestContext.Current.CancellationToken));
+
+        Assert.Same(expected, exception);
+        Assert.Null(bridge.ParentId);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReturnsBridgeResult()
     {
         var expected = new FlaxEditorSaveResult(12, true);
@@ -332,6 +410,17 @@ public sealed class EditorToolsTests
 
         public FlaxStaticModelDetails StaticModelDetails { get; set; } =
             new(0, CreateActorDetails(), null, null, false);
+
+        public FlaxVector3? ColliderSize { get; private set; }
+
+        public FlaxVector3? ColliderCenter { get; private set; }
+
+        public bool? IsTrigger { get; private set; }
+
+        public FlaxBoxColliderDetails BoxColliderDetails { get; set; } =
+            new(0, CreateActorDetails(), new FlaxVector3(1, 1, 1), new FlaxVector3(0, 0, 0), false);
+
+        public Exception? CreateBoxColliderException { get; set; }
 
         public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
 
@@ -470,6 +559,40 @@ public sealed class EditorToolsTests
             ActorId = actorId;
             ModelId = modelId;
             return Task.FromResult(StaticModelDetails);
+        }
+
+        public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
+            string actorId, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            return Task.FromResult(BoxColliderDetails);
+        }
+
+        public Task<FlaxBoxColliderDetails> CreateBoxColliderAsync(
+            string parentId, string name, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+            CancellationToken cancellationToken = default)
+        {
+            if (CreateBoxColliderException is not null)
+            {
+                return Task.FromException<FlaxBoxColliderDetails>(CreateBoxColliderException);
+            }
+            ParentId = parentId;
+            ActorName = name;
+            ColliderSize = size;
+            ColliderCenter = center;
+            IsTrigger = isTrigger;
+            return Task.FromResult(BoxColliderDetails);
+        }
+
+        public Task<FlaxBoxColliderDetails> SetBoxColliderAsync(
+            string actorId, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+            CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            ColliderSize = size;
+            ColliderCenter = center;
+            IsTrigger = isTrigger;
+            return Task.FromResult(BoxColliderDetails);
         }
 
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)

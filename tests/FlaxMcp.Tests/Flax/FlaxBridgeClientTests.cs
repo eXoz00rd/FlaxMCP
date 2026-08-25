@@ -383,6 +383,38 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal("actor-id", result.Actor.Id);
     }
 
+    [Theory]
+    [InlineData("box_collider_details", false)]
+    [InlineData("create_box_collider", true)]
+    [InlineData("set_box_collider", true)]
+    public async Task BoxColliderMethods_SendTypedRequests(string method, bool writesProperties)
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var response =
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"actor\":{\"mainThreadId\":7,\"id\":\"collider-id\",\"typeName\":\"FlaxEngine.BoxCollider\",\"name\":\"Collision\",\"parentId\":\"parent-id\",\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[],\"transform\":{\"translation\":{\"x\":0,\"y\":0,\"z\":0},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"localTransform\":{\"translation\":{\"x\":0,\"y\":0,\"z\":0},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"scripts\":[]},\"size\":{\"x\":100,\"y\":20,\"z\":50},\"center\":{\"x\":0,\"y\":10,\"z\":0},\"isTrigger\":true}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            method, writesProperties ? "\"isTrigger\":true" : "\"actorId\":\"collider-id\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        var size = new FlaxVector3(100, 20, 50);
+        var center = new FlaxVector3(0, 10, 0);
+
+        var result = method switch
+        {
+            "box_collider_details" => await client.GetBoxColliderDetailsAsync(
+                "collider-id", TestContext.Current.CancellationToken),
+            "create_box_collider" => await client.CreateBoxColliderAsync(
+                "parent-id", "Collision", size, center, true, TestContext.Current.CancellationToken),
+            _ => await client.SetBoxColliderAsync(
+                "collider-id", size, center, true, TestContext.Current.CancellationToken),
+        };
+        await serverTask;
+
+        Assert.Equal(size, result.Size);
+        Assert.Equal(center, result.Center);
+        Assert.True(result.IsTrigger);
+    }
+
     [Fact]
     public async Task SaveAsync_ReturnsTypedSaveResult()
     {
