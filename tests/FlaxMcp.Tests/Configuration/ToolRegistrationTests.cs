@@ -32,6 +32,7 @@ public sealed class ToolRegistrationTests
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_duplicate_actor");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_rename_actor");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_reparent_actor");
+        Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_delete_actor");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_save");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_play_mode");
         Assert.Contains(tools, tool => tool.ProtocolTool.Name == "editor_screenshot");
@@ -68,6 +69,7 @@ public sealed class ToolRegistrationTests
         Assert.DoesNotContain("editor_duplicate_actor", names);
         Assert.DoesNotContain("editor_rename_actor", names);
         Assert.DoesNotContain("editor_reparent_actor", names);
+        Assert.DoesNotContain("editor_delete_actor", names);
         Assert.DoesNotContain("editor_save", names);
         Assert.DoesNotContain("editor_play_mode", names);
         Assert.DoesNotContain("editor_screenshot", names);

@@ -158,6 +158,22 @@ public sealed class EditorToolsTests
         Assert.Equal(preserveWorldTransform, bridge.PreserveWorldTransform);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DeleteActorAsync_ForwardsExplicitDescendantPolicy(bool deleteDescendants)
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.DeleteActorAsync(
+            "actor-id", deleteDescendants, TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.DeletionResult, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Equal(deleteDescendants, bridge.DeleteDescendants);
+    }
+
     [Fact]
     public async Task SaveAsync_ReturnsBridgeResult()
     {
@@ -280,6 +296,11 @@ public sealed class EditorToolsTests
 
         public bool? PreserveWorldTransform { get; private set; }
 
+        public bool? DeleteDescendants { get; private set; }
+
+        public FlaxActorDeletionResult DeletionResult { get; set; } =
+            new(0, "actor-id", false, ["actor-id"]);
+
         public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
 
         public FlaxEditorPlayModeResult PlayModeResult { get; set; } = new(0, "stop", false, false);
@@ -394,6 +415,14 @@ public sealed class EditorToolsTests
             ParentId = parentId;
             PreserveWorldTransform = preserveWorldTransform;
             return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDeletionResult> DeleteActorAsync(string actorId, bool deleteDescendants,
+            CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            DeleteDescendants = deleteDescendants;
+            return Task.FromResult(DeletionResult);
         }
 
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)

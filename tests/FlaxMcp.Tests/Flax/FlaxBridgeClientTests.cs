@@ -338,6 +338,28 @@ public sealed class FlaxBridgeClientTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteActorAsync_SendsExplicitScopeAndReturnsDeletedIds()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var serverTask = ServeResponseAsync(
+            pipeName,
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"actorId\":\"actor-id\",\"deletedDescendants\":true,\"deletedActorIds\":[\"actor-id\",\"child-id\"]}}",
+            TestContext.Current.CancellationToken,
+            "delete_actor",
+            "\"deleteDescendants\":true"
+        );
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.DeleteActorAsync(
+            "actor-id", true, TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.True(result.DeletedDescendants);
+        Assert.Equal(["actor-id", "child-id"], result.DeletedActorIds);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReturnsTypedSaveResult()
     {
         var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
