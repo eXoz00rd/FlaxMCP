@@ -586,8 +586,8 @@ internal sealed class PipeBridgeServer : IDisposable
                 }
 
                 var sceneWindow = FlaxEditor.Editor.Instance.Windows.Windows
-                    .OfType<SceneEditorWindow>()
-                    .FirstOrDefault(window => window.VisibleInHierarchy);
+                    .OfType<EditGameWindow>()
+                    .FirstOrDefault(window => window.IsSelected && window.VisibleInHierarchy && !window.IsHidden);
                 var renderTask = sceneWindow?.Viewport.Task;
                 if (renderTask?.Output is null)
                 {
