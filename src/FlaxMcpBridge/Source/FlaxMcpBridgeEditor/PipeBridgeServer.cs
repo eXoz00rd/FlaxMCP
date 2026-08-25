@@ -23,7 +23,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 11;
+    private const int ProtocolVersion = 12;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private const double AssetLoadTimeoutMilliseconds = 3500;
@@ -187,6 +187,10 @@ internal sealed class PipeBridgeServer : IDisposable
             "set_static_model" => await SetStaticModelAsync(
                 RequireParam(root, "actorId"), RequireParam(root, "modelId")
             ),
+            "set_static_model_material" => await SetStaticModelMaterialAsync(
+                RequireParam(root, "actorId"), RequireIntParam(root, "slotIndex"),
+                RequireParam(root, "materialId")
+            ),
             "box_collider_details" => await GetBoxColliderDetailsAsync(RequireParam(root, "actorId")),
             "create_box_collider" => await CreateBoxColliderAsync(
                 RequireParam(root, "parentId"), RequireParam(root, "name"),
@@ -299,6 +303,18 @@ internal sealed class PipeBridgeServer : IDisposable
         }
 
         throw new ArgumentException($"Missing required params.{name} boolean");
+    }
+
+    private static int RequireIntParam(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("params", out var paramsElement) &&
+            paramsElement.TryGetProperty(name, out var value) &&
+            value.TryGetInt32(out var intValue))
+        {
+            return intValue;
+        }
+
+        throw new ArgumentException($"Missing required params.{name} integer");
     }
 
     private static Task<object> GetSceneGraphAsync()
@@ -578,6 +594,70 @@ internal sealed class PipeBridgeServer : IDisposable
     {
         return FindActor(actorId) as StaticModel ??
             throw new InvalidOperationException($"Actor '{actorId}' is not a FlaxEngine.StaticModel.");
+    }
+
+    private static Task<object> SetStaticModelMaterialAsync(string actorId, int slotIndex, string materialId)
+    {
+        if (!Guid.TryParse(materialId, out var id))
+        {
+            throw new ArgumentException($"Material id '{materialId}' is not a valid GUID.");
+        }
+
+        var material = Content.LoadAsync<MaterialBase>(id) ??
+            throw new KeyNotFoundException(
+                $"Material asset '{materialId}' does not exist or is not a FlaxEngine.MaterialBase."
+            );
+        if (material.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !material.IsLoaded)
+        {
+            throw new InvalidOperationException(
+                $"Material asset '{materialId}' could not be loaded within {AssetLoadTimeoutMilliseconds:0} ms."
+            );
+        }
+        if (!material.IsSurface)
+        {
+            throw new InvalidOperationException(
+                $"Material asset '{materialId}' is not a surface material compatible with StaticModel."
+            );
+        }
+
+        return InvokeOnUpdateAsync(() =>
+        {
+            var actor = FindStaticModel(actorId);
+            var model = actor.Model;
+            if (model is null || !model.IsLoaded)
+            {
+                throw new InvalidOperationException(
+                    $"StaticModel actor '{actorId}' does not have a loaded model."
+                );
+            }
+            if (slotIndex < 0 || slotIndex >= model.MaterialSlotsCount)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(slotIndex), slotIndex,
+                    $"StaticModel actor '{actorId}' has {model.MaterialSlotsCount} material slots."
+                );
+            }
+
+            FlaxEditor.Editor.Instance.SceneEditing.Undo.RecordAction(actor, "Set static model material", () =>
+            {
+                actor.SetMaterial(slotIndex, material);
+                MarkSceneEdited(actor);
+            });
+            return BuildStaticModelMaterialDetails(actor, slotIndex);
+        });
+    }
+
+    private static object BuildStaticModelMaterialDetails(StaticModel actor, int slotIndex)
+    {
+        var material = actor.GetMaterial(slotIndex);
+        return new
+        {
+            mainThreadId = Globals.MainThreadID,
+            actor = BuildActorDetails(actor),
+            slotIndex,
+            materialId = material.ID.ToString("N"),
+            materialPath = material.Path,
+        };
     }
 
     private static object BuildStaticModelDetails(StaticModel actor)

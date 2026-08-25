@@ -383,6 +383,27 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal("actor-id", result.Actor.Id);
     }
 
+    [Fact]
+    public async Task SetStaticModelMaterialAsync_SendsTypedRequest()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string materialId = "c5bf75264ac08f205d16eea554e3d16e";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"actor\":{{\"mainThreadId\":7,\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.StaticModel\",\"name\":\"Wall\",\"parentId\":null,\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[],\"transform\":{{\"translation\":{{\"x\":0,\"y\":0,\"z\":0}},\"orientation\":{{\"x\":0,\"y\":0,\"z\":0,\"w\":1}},\"scale\":{{\"x\":1,\"y\":1,\"z\":1}}}},\"localTransform\":{{\"translation\":{{\"x\":0,\"y\":0,\"z\":0}},\"orientation\":{{\"x\":0,\"y\":0,\"z\":0,\"w\":1}},\"scale\":{{\"x\":1,\"y\":1,\"z\":1}}}},\"scripts\":[]}},\"slotIndex\":2,\"materialId\":\"{materialId}\",\"materialPath\":\"Content/Materials/Wall.flax\"}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            "set_static_model_material", $"\"slotIndex\":2,\"materialId\":\"{materialId}\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.SetStaticModelMaterialAsync(
+            "actor-id", 2, materialId, TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(2, result.SlotIndex);
+        Assert.Equal(materialId, result.MaterialId);
+        Assert.Equal("actor-id", result.Actor.Id);
+    }
+
     [Theory]
     [InlineData("box_collider_details", false)]
     [InlineData("create_box_collider", true)]

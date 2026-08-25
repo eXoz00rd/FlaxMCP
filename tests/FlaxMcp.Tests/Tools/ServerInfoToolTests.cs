@@ -121,6 +121,12 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
+            string actorId, int slotIndex, string materialId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
             string actorId, CancellationToken cancellationToken = default)
         {
