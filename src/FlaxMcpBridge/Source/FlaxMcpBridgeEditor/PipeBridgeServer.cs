@@ -23,7 +23,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 7;
+    private const int ProtocolVersion = 8;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -172,6 +172,13 @@ internal sealed class PipeBridgeServer : IDisposable
                 OptionalParam(root, "sceneId"), OptionalParam(root, "parentId"),
                 RequireObjectParam(root, "transform")
             ),
+            "rename_actor" => await RenameActorAsync(
+                RequireParam(root, "actorId"), RequireParam(root, "name")
+            ),
+            "reparent_actor" => await ReparentActorAsync(
+                RequireParam(root, "actorId"), OptionalParam(root, "sceneId"),
+                OptionalParam(root, "parentId"), RequireBoolParam(root, "preserveWorldTransform")
+            ),
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
@@ -262,6 +269,18 @@ internal sealed class PipeBridgeServer : IDisposable
         }
 
         throw new ArgumentException($"Missing required params.{name} object");
+    }
+
+    private static bool RequireBoolParam(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("params", out var paramsElement) &&
+            paramsElement.TryGetProperty(name, out var value) &&
+            (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False))
+        {
+            return value.GetBoolean();
+        }
+
+        throw new ArgumentException($"Missing required params.{name} boolean");
     }
 
     private static Task<object> GetSceneGraphAsync()
@@ -405,6 +424,69 @@ internal sealed class PipeBridgeServer : IDisposable
                 throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
             return SpawnActor(source.Clone(), name, destination, actorTransform);
         });
+    }
+
+    private static Task<object> RenameActorAsync(string actorId, string name)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            ValidateActorName(name);
+            var actor = FindActor(actorId);
+            FlaxEditor.Editor.Instance.SceneEditing.Undo.RecordAction(actor, "Rename actor", () =>
+            {
+                actor.Name = name;
+                MarkSceneEdited(actor);
+            });
+            return BuildActorDetails(actor);
+        });
+    }
+
+    private static Task<object> ReparentActorAsync(
+        string actorId, string? sceneId, string? parentId, bool preserveWorldTransform)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            var actor = FindActor(actorId);
+            var destination = ResolveDestination(sceneId, parentId);
+            if (actor.Scene != destination.Scene)
+            {
+                throw new InvalidOperationException("Moving actors between scenes is not supported.");
+            }
+
+            for (Actor? ancestor = destination; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ancestor.ID == actor.ID)
+                {
+                    throw new InvalidOperationException("An actor cannot be parented to itself or its descendant.");
+                }
+            }
+
+            FlaxEditor.Editor.Instance.SceneEditing.Undo.RecordAction(actor, "Reparent actor", () =>
+            {
+                actor.SetParent(destination, preserveWorldTransform, false);
+                MarkSceneEdited(actor);
+            });
+            return BuildActorDetails(actor);
+        });
+    }
+
+    private static Actor FindActor(string actorId)
+    {
+        if (!Guid.TryParse(actorId, out var id))
+        {
+            throw new ArgumentException($"Actor id '{actorId}' is not a valid GUID.");
+        }
+
+        return Level.FindActor(id) ??
+            throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
+    }
+
+    private static void MarkSceneEdited(Actor actor)
+    {
+        if (actor.Scene is { } scene)
+        {
+            FlaxEditor.Editor.Instance.Scene.MarkSceneEdited(scene);
+        }
     }
 
     private static void ValidateActorName(string name)

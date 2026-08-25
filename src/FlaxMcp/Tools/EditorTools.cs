@@ -110,6 +110,32 @@ public sealed class EditorTools
             new FlaxActorTransform(translation, orientation, scale), cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_rename_actor", UseStructuredContent = true)]
+    [Description("Renames a loaded actor through the editor Undo/Redo history and returns its updated details.")]
+    public Task<FlaxActorDetails> RenameActorAsync(
+        [Description("Actor GUID from editor_scene_graph.")] string actorId,
+        [Description("New non-empty actor name.")] string name,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.RenameActorAsync(actorId, name, cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_reparent_actor", UseStructuredContent = true)]
+    [Description(
+        "Moves a loaded actor to another loaded parent or to a loaded scene root through Undo/Redo history. " +
+        "Set exactly one of sceneId or parentId and explicitly choose whether to preserve the world transform."
+    )]
+    public Task<FlaxActorDetails> ReparentActorAsync(
+        [Description("Actor GUID from editor_scene_graph.")] string actorId,
+        string? sceneId,
+        string? parentId,
+        bool preserveWorldTransform,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.ReparentActorAsync(
+            actorId, sceneId, parentId, preserveWorldTransform, cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
     [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)

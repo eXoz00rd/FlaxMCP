@@ -91,6 +91,18 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxActorDetails> RenameActorAsync(string actorId, string name,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxActorDetails> ReparentActorAsync(string actorId, string? sceneId, string? parentId,
+            bool preserveWorldTransform, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

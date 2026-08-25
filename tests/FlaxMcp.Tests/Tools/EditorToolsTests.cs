@@ -126,6 +126,39 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task RenameActorAsync_ForwardsRenameRequest()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.RenameActorAsync(
+            "actor-id", "Wall", TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.ActorDetails, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Equal("Wall", bridge.ActorName);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReparentActorAsync_ForwardsDestinationAndTransformPolicy(bool preserveWorldTransform)
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.ReparentActorAsync(
+            "actor-id", null, "parent-id", preserveWorldTransform,
+            TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.ActorDetails, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Null(bridge.SceneId);
+        Assert.Equal("parent-id", bridge.ParentId);
+        Assert.Equal(preserveWorldTransform, bridge.PreserveWorldTransform);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReturnsBridgeResult()
     {
         var expected = new FlaxEditorSaveResult(12, true);
@@ -245,6 +278,8 @@ public sealed class EditorToolsTests
 
         public FlaxActorTransform? Transform { get; private set; }
 
+        public bool? PreserveWorldTransform { get; private set; }
+
         public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
 
         public FlaxEditorPlayModeResult PlayModeResult { get; set; } = new(0, "stop", false, false);
@@ -340,6 +375,24 @@ public sealed class EditorToolsTests
             SceneId = sceneId;
             ParentId = parentId;
             Transform = transform;
+            return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDetails> RenameActorAsync(string actorId, string name,
+            CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            ActorName = name;
+            return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDetails> ReparentActorAsync(string actorId, string? sceneId, string? parentId,
+            bool preserveWorldTransform, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            SceneId = sceneId;
+            ParentId = parentId;
+            PreserveWorldTransform = preserveWorldTransform;
             return Task.FromResult(ActorDetails);
         }
 

@@ -33,6 +33,12 @@ public interface IFlaxBridgeClient
     Task<FlaxActorDetails> DuplicateActorAsync(string actorId, string name, string? sceneId, string? parentId,
         FlaxActorTransform transform, CancellationToken cancellationToken = default);
 
+    Task<FlaxActorDetails> RenameActorAsync(string actorId, string name,
+        CancellationToken cancellationToken = default);
+
+    Task<FlaxActorDetails> ReparentActorAsync(string actorId, string? sceneId, string? parentId,
+        bool preserveWorldTransform, CancellationToken cancellationToken = default);
+
     Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default);
 
     Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
@@ -46,7 +52,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 7;
+    internal const int CurrentProtocolVersion = 8;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -183,6 +189,20 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxActorDetails>(RequireHandshake(), "duplicate_actor",
             new { actorId, name, sceneId, parentId, transform }, cancellationToken);
+    }
+
+    public Task<FlaxActorDetails> RenameActorAsync(string actorId, string name,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxActorDetails>(RequireHandshake(), "rename_actor",
+            new { actorId, name }, cancellationToken);
+    }
+
+    public Task<FlaxActorDetails> ReparentActorAsync(string actorId, string? sceneId, string? parentId,
+        bool preserveWorldTransform, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxActorDetails>(RequireHandshake(), "reparent_actor",
+            new { actorId, sceneId, parentId, preserveWorldTransform }, cancellationToken);
     }
 
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
