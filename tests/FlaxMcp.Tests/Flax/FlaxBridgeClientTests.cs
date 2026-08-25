@@ -108,7 +108,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("server requires version 6", exception.Message);
+        Assert.Contains("server requires version 7", exception.Message);
         Assert.Contains("plugin reports version 3", exception.Message);
     }
 
@@ -282,6 +282,34 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(30, details.Transform.Translation.Z);
     }
 
+    [Theory]
+    [InlineData(true, "create_actor", "\"actorType\":\"EmptyActor\"")]
+    [InlineData(false, "duplicate_actor", "\"actorId\":\"source-id\"")]
+    public async Task ActorCreationMethods_SendTypedRequests(
+        bool create,
+        string method,
+        string expectedRequestText)
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        var response =
+            "{\"id\":1,\"result\":{\"mainThreadId\":7,\"id\":\"new-id\",\"typeName\":\"FlaxEngine.EmptyActor\",\"name\":\"Room\",\"parentId\":null,\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[],\"transform\":{\"translation\":{\"x\":1,\"y\":2,\"z\":3},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"localTransform\":{\"translation\":{\"x\":1,\"y\":2,\"z\":3},\"orientation\":{\"x\":0,\"y\":0,\"z\":0,\"w\":1},\"scale\":{\"x\":1,\"y\":1,\"z\":1}},\"scripts\":[]}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            method, expectedRequestText);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        var transform = new FlaxActorTransform(new FlaxVector3(1, 2, 3),
+            new FlaxQuaternion(0, 0, 0, 1), new FlaxVector3(1, 1, 1));
+
+        var details = create
+            ? await client.CreateActorAsync("EmptyActor", "Room", "scene-id", null, transform,
+                TestContext.Current.CancellationToken)
+            : await client.DuplicateActorAsync("source-id", "Room", "scene-id", null, transform,
+                TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal("new-id", details.Id);
+    }
+
     [Fact]
     public async Task SaveAsync_ReturnsTypedSaveResult()
     {
@@ -409,7 +437,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         await reader.ReadLineAsync(cancellationToken);
     }
 
-    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 6)
+    private void WriteHandshake(string pipeName, DateTime startedUtc, int protocolVersion = 7)
     {
         var handshakePath = Path.Combine(_tempDir, ProjectHash(_projectFolder) + ".json");
         File.WriteAllText(

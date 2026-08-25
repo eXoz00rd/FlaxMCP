@@ -79,6 +79,18 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxActorDetails> CreateActorAsync(string actorType, string name, string? sceneId,
+            string? parentId, FlaxActorTransform transform, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxActorDetails> DuplicateActorAsync(string actorId, string name, string? sceneId,
+            string? parentId, FlaxActorTransform transform, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

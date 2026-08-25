@@ -87,6 +87,45 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task CreateActorAsync_ForwardsCreationRequest()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var translation = new FlaxVector3(10, 20, 30);
+        var orientation = new FlaxQuaternion(0, 0, 0, 1);
+        var scale = new FlaxVector3(1, 2, 3);
+
+        var result = await tool.CreateActorAsync("EmptyActor", "Room", "scene-id", null,
+            translation, orientation, scale, TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.ActorDetails, result);
+        Assert.Equal("EmptyActor", bridge.ActorType);
+        Assert.Equal("Room", bridge.ActorName);
+        Assert.Equal("scene-id", bridge.SceneId);
+        Assert.Null(bridge.ParentId);
+        Assert.Equal(new FlaxActorTransform(translation, orientation, scale), bridge.Transform);
+    }
+
+    [Fact]
+    public async Task DuplicateActorAsync_ForwardsDuplicationRequest()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+        var translation = new FlaxVector3(10, 20, 30);
+        var orientation = new FlaxQuaternion(0, 0, 0, 1);
+        var scale = new FlaxVector3(1, 1, 1);
+
+        var result = await tool.DuplicateActorAsync("source-id", "Copy", null, "parent-id",
+            translation, orientation, scale, TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.ActorDetails, result);
+        Assert.Equal("source-id", bridge.ActorId);
+        Assert.Equal("Copy", bridge.ActorName);
+        Assert.Null(bridge.SceneId);
+        Assert.Equal("parent-id", bridge.ParentId);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReturnsBridgeResult()
     {
         var expected = new FlaxEditorSaveResult(12, true);
@@ -196,6 +235,14 @@ public sealed class EditorToolsTests
 
         public string? ActorId { get; private set; }
 
+        public string? ActorType { get; private set; }
+
+        public string? ActorName { get; private set; }
+
+        public string? SceneId { get; private set; }
+
+        public string? ParentId { get; private set; }
+
         public FlaxActorTransform? Transform { get; private set; }
 
         public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
@@ -270,6 +317,28 @@ public sealed class EditorToolsTests
             CancellationToken cancellationToken = default)
         {
             ActorId = actorId;
+            Transform = transform;
+            return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDetails> CreateActorAsync(string actorType, string name, string? sceneId,
+            string? parentId, FlaxActorTransform transform, CancellationToken cancellationToken = default)
+        {
+            ActorType = actorType;
+            ActorName = name;
+            SceneId = sceneId;
+            ParentId = parentId;
+            Transform = transform;
+            return Task.FromResult(ActorDetails);
+        }
+
+        public Task<FlaxActorDetails> DuplicateActorAsync(string actorId, string name, string? sceneId,
+            string? parentId, FlaxActorTransform transform, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            ActorName = name;
+            SceneId = sceneId;
+            ParentId = parentId;
             Transform = transform;
             return Task.FromResult(ActorDetails);
         }
