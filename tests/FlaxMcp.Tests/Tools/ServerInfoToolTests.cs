@@ -103,6 +103,12 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxActorDeletionResult> DeleteActorAsync(string actorId, bool deleteDescendants,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

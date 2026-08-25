@@ -23,7 +23,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 8;
+    private const int ProtocolVersion = 9;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -178,6 +178,9 @@ internal sealed class PipeBridgeServer : IDisposable
             "reparent_actor" => await ReparentActorAsync(
                 RequireParam(root, "actorId"), OptionalParam(root, "sceneId"),
                 OptionalParam(root, "parentId"), RequireBoolParam(root, "preserveWorldTransform")
+            ),
+            "delete_actor" => await DeleteActorAsync(
+                RequireParam(root, "actorId"), RequireBoolParam(root, "deleteDescendants")
             ),
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
@@ -468,6 +471,60 @@ internal sealed class PipeBridgeServer : IDisposable
             });
             return BuildActorDetails(actor);
         });
+    }
+
+    private static Task<object> DeleteActorAsync(string actorId, bool deleteDescendants)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            var actor = FindActor(actorId);
+            var deletedActorIds = CollectActorIds(actor);
+            if (!deleteDescendants && deletedActorIds.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Actor '{actorId}' has {deletedActorIds.Count - 1} descendant(s). " +
+                    "Set deleteDescendants to true to delete the complete hierarchy."
+                );
+            }
+
+            var selectedActorIds = FlaxEditor.Editor.Instance.SceneEditing.Selection
+                .OfType<FlaxEditor.SceneGraph.ActorNode>()
+                .Select(node => node.Actor.ID)
+                .Where(id => !deletedActorIds.Contains(id.ToString("D")))
+                .ToList();
+            var node = FlaxEditor.Editor.Instance.Scene.GetActorNode(actor.ID) ??
+                throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor scene graph.");
+            FlaxEditor.Editor.Instance.SceneEditing.Select(new[] { node }, additive: false);
+            FlaxEditor.Editor.Instance.SceneEditing.Delete();
+
+            var restoredSelection = new List<FlaxEditor.SceneGraph.SceneGraphNode>();
+            foreach (var selectedActorId in selectedActorIds)
+            {
+                if (FlaxEditor.Editor.Instance.Scene.GetActorNode(selectedActorId) is { } selectedNode)
+                {
+                    restoredSelection.Add(selectedNode);
+                }
+            }
+            FlaxEditor.Editor.Instance.SceneEditing.Select(restoredSelection, additive: false);
+
+            return new
+            {
+                mainThreadId = Globals.MainThreadID,
+                actorId,
+                deletedDescendants = deletedActorIds.Count > 1,
+                deletedActorIds,
+            };
+        });
+    }
+
+    private static List<string> CollectActorIds(Actor actor)
+    {
+        var actorIds = new List<string> { actor.ID.ToString("D") };
+        foreach (var child in actor.Children)
+        {
+            actorIds.AddRange(CollectActorIds(child));
+        }
+        return actorIds;
     }
 
     private static Actor FindActor(string actorId)

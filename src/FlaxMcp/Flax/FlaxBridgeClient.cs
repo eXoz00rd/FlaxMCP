@@ -39,6 +39,9 @@ public interface IFlaxBridgeClient
     Task<FlaxActorDetails> ReparentActorAsync(string actorId, string? sceneId, string? parentId,
         bool preserveWorldTransform, CancellationToken cancellationToken = default);
 
+    Task<FlaxActorDeletionResult> DeleteActorAsync(string actorId, bool deleteDescendants,
+        CancellationToken cancellationToken = default);
+
     Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default);
 
     Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
@@ -52,7 +55,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 8;
+    internal const int CurrentProtocolVersion = 9;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -203,6 +206,13 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxActorDetails>(RequireHandshake(), "reparent_actor",
             new { actorId, sceneId, parentId, preserveWorldTransform }, cancellationToken);
+    }
+
+    public Task<FlaxActorDeletionResult> DeleteActorAsync(string actorId, bool deleteDescendants,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxActorDeletionResult>(RequireHandshake(), "delete_actor",
+            new { actorId, deleteDescendants }, cancellationToken);
     }
 
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
@@ -439,6 +449,12 @@ public sealed record FlaxVector3(double X, double Y, double Z);
 public sealed record FlaxQuaternion(double X, double Y, double Z, double W);
 
 public sealed record FlaxActorScript(string Id, string TypeName, bool Enabled, bool IsEnabledInHierarchy);
+
+public sealed record FlaxActorDeletionResult(
+    int MainThreadId,
+    string ActorId,
+    bool DeletedDescendants,
+    IReadOnlyList<string> DeletedActorIds);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 

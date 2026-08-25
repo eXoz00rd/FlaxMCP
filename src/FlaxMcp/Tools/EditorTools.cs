@@ -136,6 +136,19 @@ public sealed class EditorTools
             actorId, sceneId, parentId, preserveWorldTransform, cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_delete_actor", UseStructuredContent = true)]
+    [Description(
+        "Deletes a loaded actor through the editor Undo/Redo history. " +
+        "Set deleteDescendants to true to explicitly delete its complete hierarchy; false rejects actors with children."
+    )]
+    public Task<FlaxActorDeletionResult> DeleteActorAsync(
+        [Description("Actor GUID from editor_scene_graph.")] string actorId,
+        bool deleteDescendants,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.DeleteActorAsync(actorId, deleteDescendants, cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
     [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)
