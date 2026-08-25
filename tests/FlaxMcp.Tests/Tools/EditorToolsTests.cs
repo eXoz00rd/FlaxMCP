@@ -202,6 +202,21 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task SetStaticModelMaterialAsync_ForwardsTypedMaterialRequest()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.SetStaticModelMaterialAsync(
+            "actor-id", 2, "material-id", TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.StaticModelMaterialDetails, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Equal(2, bridge.SlotIndex);
+        Assert.Equal("material-id", bridge.MaterialId);
+    }
+
+    [Fact]
     public async Task CreateBoxColliderAsync_ForwardsTypedProperties()
     {
         var bridge = new StubBridgeClient();
@@ -411,6 +426,13 @@ public sealed class EditorToolsTests
         public FlaxStaticModelDetails StaticModelDetails { get; set; } =
             new(0, CreateActorDetails(), null, null, false);
 
+        public int? SlotIndex { get; private set; }
+
+        public string? MaterialId { get; private set; }
+
+        public FlaxStaticModelMaterialDetails StaticModelMaterialDetails { get; set; } =
+            new(0, CreateActorDetails(), 0, "material-id", "Content/Materials/Wall.flax");
+
         public FlaxVector3? ColliderSize { get; private set; }
 
         public FlaxVector3? ColliderCenter { get; private set; }
@@ -559,6 +581,15 @@ public sealed class EditorToolsTests
             ActorId = actorId;
             ModelId = modelId;
             return Task.FromResult(StaticModelDetails);
+        }
+
+        public Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
+            string actorId, int slotIndex, string materialId, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            SlotIndex = slotIndex;
+            MaterialId = materialId;
+            return Task.FromResult(StaticModelMaterialDetails);
         }
 
         public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(

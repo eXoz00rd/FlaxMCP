@@ -48,6 +48,9 @@ public interface IFlaxBridgeClient
     Task<FlaxStaticModelDetails> SetStaticModelAsync(
         string actorId, string modelId, CancellationToken cancellationToken = default);
 
+    Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
+        string actorId, int slotIndex, string materialId, CancellationToken cancellationToken = default);
+
     Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
         string actorId, CancellationToken cancellationToken = default);
 
@@ -72,7 +75,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 11;
+    internal const int CurrentProtocolVersion = 12;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -244,6 +247,13 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxStaticModelDetails>(RequireHandshake(), "set_static_model",
             new { actorId, modelId }, cancellationToken);
+    }
+
+    public Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
+        string actorId, int slotIndex, string materialId, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxStaticModelMaterialDetails>(RequireHandshake(), "set_static_model_material",
+            new { actorId, slotIndex, materialId }, cancellationToken);
     }
 
     public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
@@ -516,6 +526,13 @@ public sealed record FlaxStaticModelDetails(
     string? ModelId,
     string? ModelPath,
     bool ModelIsLoaded);
+
+public sealed record FlaxStaticModelMaterialDetails(
+    int MainThreadId,
+    FlaxActorDetails Actor,
+    int SlotIndex,
+    string MaterialId,
+    string? MaterialPath);
 
 public sealed record FlaxBoxColliderDetails(
     int MainThreadId,

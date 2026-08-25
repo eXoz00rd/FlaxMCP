@@ -171,6 +171,20 @@ public sealed class EditorTools
         return _bridgeClient.SetStaticModelAsync(actorId, modelId, cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_set_static_model_material", UseStructuredContent = true)]
+    [Description(
+        "Assigns an existing FlaxEngine.MaterialBase asset to one slot of a loaded StaticModel through " +
+        "Undo/Redo history. The bridge validates the actor, slot, and material before changing the scene."
+    )]
+    public Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
+        [Description("StaticModel actor GUID from editor_scene_graph.")] string actorId,
+        [Description("Zero-based material slot index from the assigned model.")] int slotIndex,
+        [Description("FlaxEngine.Material or MaterialInstance asset GUID from content_search.")] string materialId,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.SetStaticModelMaterialAsync(actorId, slotIndex, materialId, cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_box_collider_details", ReadOnly = true, UseStructuredContent = true)]
     [Description("Returns the local size, center, trigger mode, and actor details for a loaded BoxCollider.")]
     public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
