@@ -27,6 +27,10 @@ Don't guess an API shape from memory or general engine familiarity — verify it
 
 ## 2. Build and test
 
+- Never ask the user to perform manual verification.
+- Never perform manual verification or control the user's computer.
+- Use automated tests and MCP tools only. If they cannot verify a requirement, report the limitation without asking for or attempting a manual check.
+
 ```bash
 dotnet build FlaxMcp.slnx
 dotnet test FlaxMcp.slnx
