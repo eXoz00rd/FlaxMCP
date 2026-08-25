@@ -149,6 +149,28 @@ public sealed class EditorTools
         return _bridgeClient.DeleteActorAsync(actorId, deleteDescendants, cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_static_model_details", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns the assigned model reference and live actor details for a loaded StaticModel actor.")]
+    public Task<FlaxStaticModelDetails> GetStaticModelDetailsAsync(
+        [Description("StaticModel actor GUID from editor_scene_graph.")] string actorId,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.GetStaticModelDetailsAsync(actorId, cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_set_static_model", UseStructuredContent = true)]
+    [Description(
+        "Assigns an existing FlaxEngine.Model asset to a loaded StaticModel actor through Undo/Redo history. " +
+        "The bridge validates that modelId resolves to a compatible model before changing the scene."
+    )]
+    public Task<FlaxStaticModelDetails> SetStaticModelAsync(
+        [Description("StaticModel actor GUID from editor_scene_graph.")] string actorId,
+        [Description("FlaxEngine.Model asset GUID from content_search.")] string modelId,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.SetStaticModelAsync(actorId, modelId, cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
     [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)

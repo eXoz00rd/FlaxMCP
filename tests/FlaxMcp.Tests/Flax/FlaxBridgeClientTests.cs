@@ -359,6 +359,30 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(["actor-id", "child-id"], result.DeletedActorIds);
     }
 
+    [Theory]
+    [InlineData(true, "static_model_details", null)]
+    [InlineData(false, "set_static_model", "\"modelId\":\"model-id\"")]
+    public async Task StaticModelMethods_SendTypedRequests(
+        bool readOnly, string method, string? expectedRequestText)
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string modelId = "b43f0f8f4aaba3f3156896a5a22ba493";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"actor\":{{\"mainThreadId\":7,\"id\":\"actor-id\",\"typeName\":\"FlaxEngine.StaticModel\",\"name\":\"Wall\",\"parentId\":null,\"sceneId\":\"scene-id\",\"isActive\":true,\"isActiveInHierarchy\":true,\"layer\":0,\"layerName\":\"Default\",\"tags\":[],\"transform\":{{\"translation\":{{\"x\":0,\"y\":0,\"z\":0}},\"orientation\":{{\"x\":0,\"y\":0,\"z\":0,\"w\":1}},\"scale\":{{\"x\":1,\"y\":1,\"z\":1}}}},\"localTransform\":{{\"translation\":{{\"x\":0,\"y\":0,\"z\":0}},\"orientation\":{{\"x\":0,\"y\":0,\"z\":0,\"w\":1}},\"scale\":{{\"x\":1,\"y\":1,\"z\":1}}}},\"scripts\":[]}},\"modelId\":\"{modelId}\",\"modelPath\":\"Content/Cube.flax\",\"modelIsLoaded\":true}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            method, expectedRequestText);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = readOnly
+            ? await client.GetStaticModelDetailsAsync("actor-id", TestContext.Current.CancellationToken)
+            : await client.SetStaticModelAsync("actor-id", "model-id", TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(modelId, result.ModelId);
+        Assert.Equal("actor-id", result.Actor.Id);
+    }
+
     [Fact]
     public async Task SaveAsync_ReturnsTypedSaveResult()
     {

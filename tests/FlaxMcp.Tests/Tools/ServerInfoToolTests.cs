@@ -109,6 +109,18 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxStaticModelDetails> GetStaticModelDetailsAsync(
+            string actorId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxStaticModelDetails> SetStaticModelAsync(
+            string actorId, string modelId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
