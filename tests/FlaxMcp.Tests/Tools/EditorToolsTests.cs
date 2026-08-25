@@ -175,6 +175,33 @@ public sealed class EditorToolsTests
     }
 
     [Fact]
+    public async Task GetStaticModelDetailsAsync_ForwardsActorId()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.GetStaticModelDetailsAsync(
+            "actor-id", TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.StaticModelDetails, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+    }
+
+    [Fact]
+    public async Task SetStaticModelAsync_ForwardsTypedModelRequest()
+    {
+        var bridge = new StubBridgeClient();
+        var tool = new EditorTools(bridge);
+
+        var result = await tool.SetStaticModelAsync(
+            "actor-id", "model-id", TestContext.Current.CancellationToken);
+
+        Assert.Same(bridge.StaticModelDetails, result);
+        Assert.Equal("actor-id", bridge.ActorId);
+        Assert.Equal("model-id", bridge.ModelId);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReturnsBridgeResult()
     {
         var expected = new FlaxEditorSaveResult(12, true);
@@ -301,6 +328,11 @@ public sealed class EditorToolsTests
         public FlaxActorDeletionResult DeletionResult { get; set; } =
             new(0, "actor-id", false, ["actor-id"]);
 
+        public string? ModelId { get; private set; }
+
+        public FlaxStaticModelDetails StaticModelDetails { get; set; } =
+            new(0, CreateActorDetails(), null, null, false);
+
         public FlaxEditorSaveResult SaveResult { get; set; } = new(0, true);
 
         public FlaxEditorPlayModeResult PlayModeResult { get; set; } = new(0, "stop", false, false);
@@ -423,6 +455,21 @@ public sealed class EditorToolsTests
             ActorId = actorId;
             DeleteDescendants = deleteDescendants;
             return Task.FromResult(DeletionResult);
+        }
+
+        public Task<FlaxStaticModelDetails> GetStaticModelDetailsAsync(
+            string actorId, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            return Task.FromResult(StaticModelDetails);
+        }
+
+        public Task<FlaxStaticModelDetails> SetStaticModelAsync(
+            string actorId, string modelId, CancellationToken cancellationToken = default)
+        {
+            ActorId = actorId;
+            ModelId = modelId;
+            return Task.FromResult(StaticModelDetails);
         }
 
         public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)

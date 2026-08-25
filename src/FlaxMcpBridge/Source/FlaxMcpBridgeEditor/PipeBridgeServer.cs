@@ -23,9 +23,10 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 9;
+    private const int ProtocolVersion = 10;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
+    private const double AssetLoadTimeoutMilliseconds = 3500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private readonly string _projectFolder;
     private readonly CancellationTokenSource _cts = new();
@@ -181,6 +182,10 @@ internal sealed class PipeBridgeServer : IDisposable
             ),
             "delete_actor" => await DeleteActorAsync(
                 RequireParam(root, "actorId"), RequireBoolParam(root, "deleteDescendants")
+            ),
+            "static_model_details" => await GetStaticModelDetailsAsync(RequireParam(root, "actorId")),
+            "set_static_model" => await SetStaticModelAsync(
+                RequireParam(root, "actorId"), RequireParam(root, "modelId")
             ),
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
@@ -525,6 +530,57 @@ internal sealed class PipeBridgeServer : IDisposable
             actorIds.AddRange(CollectActorIds(child));
         }
         return actorIds;
+    }
+
+    private static Task<object> GetStaticModelDetailsAsync(string actorId)
+    {
+        return InvokeOnUpdateAsync(() => BuildStaticModelDetails(FindStaticModel(actorId)));
+    }
+
+    private static Task<object> SetStaticModelAsync(string actorId, string modelId)
+    {
+        if (!Guid.TryParse(modelId, out var id))
+        {
+            throw new ArgumentException($"Model id '{modelId}' is not a valid GUID.");
+        }
+
+        var model = Content.LoadAsync<Model>(id) ??
+            throw new KeyNotFoundException($"Model asset '{modelId}' does not exist or is not a FlaxEngine.Model.");
+        if (model.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !model.IsLoaded)
+        {
+            throw new InvalidOperationException(
+                $"Model asset '{modelId}' could not be loaded within {AssetLoadTimeoutMilliseconds:0} ms."
+            );
+        }
+        return InvokeOnUpdateAsync(() =>
+        {
+            var actor = FindStaticModel(actorId);
+            FlaxEditor.Editor.Instance.SceneEditing.Undo.RecordAction(actor, "Set static model", () =>
+            {
+                actor.Model = model;
+                MarkSceneEdited(actor);
+            });
+            return BuildStaticModelDetails(actor);
+        });
+    }
+
+    private static StaticModel FindStaticModel(string actorId)
+    {
+        return FindActor(actorId) as StaticModel ??
+            throw new InvalidOperationException($"Actor '{actorId}' is not a FlaxEngine.StaticModel.");
+    }
+
+    private static object BuildStaticModelDetails(StaticModel actor)
+    {
+        var model = actor.Model;
+        return new
+        {
+            mainThreadId = Globals.MainThreadID,
+            actor = BuildActorDetails(actor),
+            modelId = model?.ID.ToString("N"),
+            modelPath = model?.Path,
+            modelIsLoaded = model?.IsLoaded ?? false,
+        };
     }
 
     private static Actor FindActor(string actorId)

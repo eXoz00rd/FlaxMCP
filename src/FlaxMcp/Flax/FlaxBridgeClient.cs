@@ -42,6 +42,12 @@ public interface IFlaxBridgeClient
     Task<FlaxActorDeletionResult> DeleteActorAsync(string actorId, bool deleteDescendants,
         CancellationToken cancellationToken = default);
 
+    Task<FlaxStaticModelDetails> GetStaticModelDetailsAsync(
+        string actorId, CancellationToken cancellationToken = default);
+
+    Task<FlaxStaticModelDetails> SetStaticModelAsync(
+        string actorId, string modelId, CancellationToken cancellationToken = default);
+
     Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default);
 
     Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
@@ -55,7 +61,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 9;
+    internal const int CurrentProtocolVersion = 10;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -213,6 +219,20 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxActorDeletionResult>(RequireHandshake(), "delete_actor",
             new { actorId, deleteDescendants }, cancellationToken);
+    }
+
+    public Task<FlaxStaticModelDetails> GetStaticModelDetailsAsync(
+        string actorId, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxStaticModelDetails>(RequireHandshake(), "static_model_details",
+            new { actorId }, cancellationToken);
+    }
+
+    public Task<FlaxStaticModelDetails> SetStaticModelAsync(
+        string actorId, string modelId, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxStaticModelDetails>(RequireHandshake(), "set_static_model",
+            new { actorId, modelId }, cancellationToken);
     }
 
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
@@ -455,6 +475,13 @@ public sealed record FlaxActorDeletionResult(
     string ActorId,
     bool DeletedDescendants,
     IReadOnlyList<string> DeletedActorIds);
+
+public sealed record FlaxStaticModelDetails(
+    int MainThreadId,
+    FlaxActorDetails Actor,
+    string? ModelId,
+    string? ModelPath,
+    bool ModelIsLoaded);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 
