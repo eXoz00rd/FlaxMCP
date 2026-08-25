@@ -23,7 +23,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 6;
+    private const int ProtocolVersion = 7;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
@@ -162,6 +162,16 @@ internal sealed class PipeBridgeServer : IDisposable
                 RequireParam(root, "actorId"),
                 RequireObjectParam(root, "transform")
             ),
+            "create_actor" => await CreateActorAsync(
+                RequireParam(root, "actorType"), RequireParam(root, "name"),
+                OptionalParam(root, "sceneId"), OptionalParam(root, "parentId"),
+                RequireObjectParam(root, "transform")
+            ),
+            "duplicate_actor" => await DuplicateActorAsync(
+                RequireParam(root, "actorId"), RequireParam(root, "name"),
+                OptionalParam(root, "sceneId"), OptionalParam(root, "parentId"),
+                RequireObjectParam(root, "transform")
+            ),
             "save" => await SaveAsync(),
             "play_mode" => await SetPlayModeAsync(RequireParam(root, "action")),
             "screenshot" => await CaptureScreenshotAsync(RequireParam(root, "path")),
@@ -211,6 +221,13 @@ internal sealed class PipeBridgeServer : IDisposable
             return stringValue;
         }
         throw new ArgumentException($"Missing required params.{name}");
+    }
+
+    private static string? OptionalParam(JsonElement root, string name)
+    {
+        return root.TryGetProperty("params", out var paramsElement) &&
+               paramsElement.TryGetProperty(name, out var value) &&
+               value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
     private static IReadOnlyList<string> RequireStringArrayParam(JsonElement root, string name)
@@ -350,6 +367,90 @@ internal sealed class PipeBridgeServer : IDisposable
             }
             return BuildActorDetails(actor);
         });
+    }
+
+    private static Task<object> CreateActorAsync(
+        string actorType, string name, string? sceneId, string? parentId, JsonElement transform)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            ValidateActorName(name);
+            var destination = ResolveDestination(sceneId, parentId);
+            var actorTransform = ReadTransform(transform);
+            Actor actor = actorType switch
+            {
+                "EmptyActor" => new EmptyActor(),
+                "StaticModel" => new StaticModel(),
+                _ => throw new ArgumentException(
+                    $"Actor type '{actorType}' is not allowed. Allowed types: EmptyActor, StaticModel."
+                ),
+            };
+            return SpawnActor(actor, name, destination, actorTransform);
+        });
+    }
+
+    private static Task<object> DuplicateActorAsync(
+        string actorId, string name, string? sceneId, string? parentId, JsonElement transform)
+    {
+        return InvokeOnUpdateAsync(() =>
+        {
+            ValidateActorName(name);
+            var destination = ResolveDestination(sceneId, parentId);
+            var actorTransform = ReadTransform(transform);
+            if (!Guid.TryParse(actorId, out var id))
+            {
+                throw new ArgumentException($"Actor id '{actorId}' is not a valid GUID.");
+            }
+            var source = Level.FindActor(id) ??
+                throw new KeyNotFoundException($"Actor '{actorId}' is not loaded in the editor.");
+            return SpawnActor(source.Clone(), name, destination, actorTransform);
+        });
+    }
+
+    private static void ValidateActorName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Actor name cannot be empty.");
+        }
+    }
+
+    private static Actor ResolveDestination(string? sceneId, string? parentId)
+    {
+        if ((sceneId is null) == (parentId is null))
+        {
+            throw new ArgumentException("Set exactly one of sceneId or parentId.");
+        }
+
+        Actor destination;
+        if (parentId is not null)
+        {
+            if (!Guid.TryParse(parentId, out var id))
+            {
+                throw new ArgumentException($"Parent actor id '{parentId}' is not a valid GUID.");
+            }
+            destination = Level.FindActor(id) ??
+                throw new KeyNotFoundException($"Parent actor '{parentId}' is not loaded in the editor.");
+        }
+        else
+        {
+            if (!Guid.TryParse(sceneId, out var id))
+            {
+                throw new ArgumentException($"Scene id '{sceneId}' is not a valid GUID.");
+            }
+            destination = Level.Scenes.FirstOrDefault(scene => scene.ID == id) ??
+                throw new KeyNotFoundException($"Scene '{sceneId}' is not loaded in the editor.");
+        }
+
+        return destination;
+    }
+
+    private static object SpawnActor(Actor actor, string name, Actor destination, Transform transform)
+    {
+        actor.Name = name;
+        actor.Transform = transform;
+        FlaxEditor.Editor.Instance.SceneEditing.Spawn(actor, destination, -1, false);
+        return BuildActorDetails(actor);
     }
 
     private static Transform ReadTransform(JsonElement value)

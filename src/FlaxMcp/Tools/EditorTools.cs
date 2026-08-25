@@ -78,6 +78,38 @@ public sealed class EditorTools
         );
     }
 
+    [McpServerTool(Name = "editor_create_actor", UseStructuredContent = true)]
+    [Description("Creates an allowlisted EmptyActor or StaticModel in a loaded scene and returns its live details.")]
+    public Task<FlaxActorDetails> CreateActorAsync(
+        [Description("Allowlisted actor type: EmptyActor or StaticModel.")] string actorType,
+        string name,
+        string? sceneId,
+        string? parentId,
+        FlaxVector3 translation,
+        FlaxQuaternion orientation,
+        FlaxVector3 scale,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.CreateActorAsync(actorType, name, sceneId, parentId,
+            new FlaxActorTransform(translation, orientation, scale), cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_duplicate_actor", UseStructuredContent = true)]
+    [Description("Duplicates a loaded actor into a loaded scene or parent and returns the duplicate's live details.")]
+    public Task<FlaxActorDetails> DuplicateActorAsync(
+        string actorId,
+        string name,
+        string? sceneId,
+        string? parentId,
+        FlaxVector3 translation,
+        FlaxQuaternion orientation,
+        FlaxVector3 scale,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.DuplicateActorAsync(actorId, name, sceneId, parentId,
+            new FlaxActorTransform(translation, orientation, scale), cancellationToken);
+    }
+
     [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
     [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)
