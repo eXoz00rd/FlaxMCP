@@ -48,6 +48,17 @@ public interface IFlaxBridgeClient
     Task<FlaxStaticModelDetails> SetStaticModelAsync(
         string actorId, string modelId, CancellationToken cancellationToken = default);
 
+    Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
+        string actorId, CancellationToken cancellationToken = default);
+
+    Task<FlaxBoxColliderDetails> CreateBoxColliderAsync(
+        string parentId, string name, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+        CancellationToken cancellationToken = default);
+
+    Task<FlaxBoxColliderDetails> SetBoxColliderAsync(
+        string actorId, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+        CancellationToken cancellationToken = default);
+
     Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default);
 
     Task<FlaxEditorPlayModeResult> SetPlayModeAsync(
@@ -61,7 +72,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 10;
+    internal const int CurrentProtocolVersion = 11;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -233,6 +244,29 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxStaticModelDetails>(RequireHandshake(), "set_static_model",
             new { actorId, modelId }, cancellationToken);
+    }
+
+    public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
+        string actorId, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxBoxColliderDetails>(RequireHandshake(), "box_collider_details",
+            new { actorId }, cancellationToken);
+    }
+
+    public Task<FlaxBoxColliderDetails> CreateBoxColliderAsync(
+        string parentId, string name, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxBoxColliderDetails>(RequireHandshake(), "create_box_collider",
+            new { parentId, name, size, center, isTrigger }, cancellationToken);
+    }
+
+    public Task<FlaxBoxColliderDetails> SetBoxColliderAsync(
+        string actorId, FlaxVector3 size, FlaxVector3 center, bool isTrigger,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxBoxColliderDetails>(RequireHandshake(), "set_box_collider",
+            new { actorId, size, center, isTrigger }, cancellationToken);
     }
 
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken = default)
@@ -482,6 +516,13 @@ public sealed record FlaxStaticModelDetails(
     string? ModelId,
     string? ModelPath,
     bool ModelIsLoaded);
+
+public sealed record FlaxBoxColliderDetails(
+    int MainThreadId,
+    FlaxActorDetails Actor,
+    FlaxVector3 Size,
+    FlaxVector3 Center,
+    bool IsTrigger);
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 

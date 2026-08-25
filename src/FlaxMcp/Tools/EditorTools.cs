@@ -171,6 +171,62 @@ public sealed class EditorTools
         return _bridgeClient.SetStaticModelAsync(actorId, modelId, cancellationToken);
     }
 
+    [McpServerTool(Name = "editor_box_collider_details", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Returns the local size, center, trigger mode, and actor details for a loaded BoxCollider.")]
+    public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
+        [Description("BoxCollider actor GUID from editor_scene_graph.")] string actorId,
+        CancellationToken cancellationToken)
+    {
+        return _bridgeClient.GetBoxColliderDetailsAsync(actorId, cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_create_box_collider", UseStructuredContent = true)]
+    [Description("Creates a BoxCollider under a loaded parent actor and returns its effective properties.")]
+    public Task<FlaxBoxColliderDetails> CreateBoxColliderAsync(
+        [Description("Loaded parent actor GUID from editor_scene_graph.")] string parentId,
+        string name,
+        [Description("Positive collider dimensions in local space.")] FlaxVector3 size,
+        [Description("Collider center offset in local space.")] FlaxVector3 center,
+        bool isTrigger,
+        CancellationToken cancellationToken)
+    {
+        ValidateBoxColliderProperties(size, center);
+        return _bridgeClient.CreateBoxColliderAsync(
+            parentId, name, size, center, isTrigger, cancellationToken);
+    }
+
+    [McpServerTool(Name = "editor_set_box_collider", UseStructuredContent = true)]
+    [Description("Updates a loaded BoxCollider's local size, center, and trigger mode through Undo/Redo history.")]
+    public Task<FlaxBoxColliderDetails> SetBoxColliderAsync(
+        [Description("BoxCollider actor GUID from editor_scene_graph.")] string actorId,
+        [Description("Positive collider dimensions in local space.")] FlaxVector3 size,
+        [Description("Collider center offset in local space.")] FlaxVector3 center,
+        bool isTrigger,
+        CancellationToken cancellationToken)
+    {
+        ValidateBoxColliderProperties(size, center);
+        return _bridgeClient.SetBoxColliderAsync(
+            actorId, size, center, isTrigger, cancellationToken);
+    }
+
+    private static void ValidateBoxColliderProperties(FlaxVector3 size, FlaxVector3 center)
+    {
+        if (!IsFinite(size) || size.X <= 0 || size.Y <= 0 || size.Z <= 0)
+        {
+            throw new ArgumentException("BoxCollider size components must be finite and greater than zero.",
+                nameof(size));
+        }
+        if (!IsFinite(center))
+        {
+            throw new ArgumentException("BoxCollider center components must be finite.", nameof(center));
+        }
+    }
+
+    private static bool IsFinite(FlaxVector3 value)
+    {
+        return double.IsFinite(value.X) && double.IsFinite(value.Y) && double.IsFinite(value.Z);
+    }
+
     [McpServerTool(Name = "editor_save", UseStructuredContent = true)]
     [Description("Saves all modified scenes and content assets in the live Flax Editor.")]
     public Task<FlaxEditorSaveResult> SaveAsync(CancellationToken cancellationToken)
