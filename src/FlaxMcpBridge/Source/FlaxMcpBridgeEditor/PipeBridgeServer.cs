@@ -33,7 +33,7 @@ internal sealed class PipeBridgeServer : IDisposable
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private readonly string _projectFolder;
     private readonly CancellationTokenSource _cts = new();
-    private Task? _acceptLoop;
+    private Thread? _serverThread;
     private NamedPipeServerStream? _currentPipe;
     private string? _handshakePath;
 
@@ -48,11 +48,17 @@ internal sealed class PipeBridgeServer : IDisposable
     public void Start()
     {
         WriteHandshakeFile();
-        _acceptLoop = Task.Run(() => AcceptLoopAsync(_cts.Token));
+        _serverThread = new Thread(AcceptLoop)
+        {
+            IsBackground = true,
+            Name = "FlaxMcpBridge pipe server",
+        };
+        _serverThread.Start();
     }
 
-    private async Task AcceptLoopAsync(CancellationToken token)
+    private void AcceptLoop()
     {
+        var token = _cts.Token;
         while (!token.IsCancellationRequested)
         {
             NamedPipeServerStream? pipe = null;
@@ -60,12 +66,16 @@ internal sealed class PipeBridgeServer : IDisposable
             {
                 pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
                 _currentPipe = pipe;
-                await pipe.WaitForConnectionAsync(token);
-                await HandleClientAsync(pipe, token);
+                pipe.WaitForConnection();
+                HandleClient(pipe, token);
             }
             catch (OperationCanceledException)
             {
                 // Shutting down.
+            }
+            catch (ObjectDisposedException) when (token.IsCancellationRequested)
+            {
+                // Shutting down while waiting for a client or reading a request.
             }
             catch (IOException)
             {
@@ -83,48 +93,46 @@ internal sealed class PipeBridgeServer : IDisposable
         }
     }
 
-    private static async Task HandleClientAsync(NamedPipeServerStream pipe, CancellationToken token)
+    private static void HandleClient(NamedPipeServerStream pipe, CancellationToken token)
     {
         using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-        await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = false, NewLine = "\n" };
+        using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = false, NewLine = "\n" };
 
         while (pipe.IsConnected && !token.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(token);
+            var line = reader.ReadLine();
             if (line is null)
                 break;
 
             string responseJson;
             try
             {
-                using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-                requestTimeout.CancelAfter(RequestTimeout);
                 var dispatchTask = DispatchAsync(line);
-                try
-                {
-                    responseJson = await dispatchTask.WaitAsync(requestTimeout.Token);
-                }
-                catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                if (!dispatchTask.Wait(RequestTimeout))
                 {
                     ObserveFault(dispatchTask);
-                    throw;
+                    responseJson = SerializeError(
+                        ReadRequestId(line),
+                        "request_timeout",
+                        $"The editor action did not complete within {RequestTimeout.TotalSeconds:0} seconds."
+                    );
+                }
+                else
+                {
+                    responseJson = dispatchTask.GetAwaiter().GetResult();
                 }
             }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            catch (AggregateException ex) when (ex.InnerExceptions.Count == 1)
             {
-                responseJson = SerializeError(
-                    ReadRequestId(line),
-                    "request_timeout",
-                    $"The editor action did not complete within {RequestTimeout.TotalSeconds:0} seconds."
-                );
+                responseJson = SerializeError(ReadRequestId(line), "request_failed", ex.InnerException!.Message);
             }
             catch (Exception ex)
             {
                 responseJson = SerializeError(ReadRequestId(line), "request_failed", ex.Message);
             }
 
-            await writer.WriteLineAsync(responseJson);
-            await writer.FlushAsync(token);
+            writer.WriteLine(responseJson);
+            writer.Flush();
         }
     }
 
@@ -1628,15 +1636,10 @@ internal sealed class PipeBridgeServer : IDisposable
         _cts.Cancel();
         _currentPipe?.Dispose();
 
-        try
-        {
-            _acceptLoop?.Wait(TimeSpan.FromSeconds(2));
-        }
-        catch (AggregateException)
-        {
-            // Expected: cancellation unwinds through the accept loop.
-        }
+        _serverThread?.Join();
 
+        _serverThread = null;
+        _currentPipe = null;
         _cts.Dispose();
 
         if (_handshakePath is not null && File.Exists(_handshakePath))
