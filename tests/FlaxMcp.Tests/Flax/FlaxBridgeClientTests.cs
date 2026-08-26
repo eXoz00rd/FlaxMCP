@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FlaxMcp.Flax;
+using ModelContextProtocol;
 using Xunit;
 
 namespace FlaxMcp.Tests.Flax;
@@ -36,6 +37,20 @@ public sealed class FlaxBridgeClientTests : IDisposable
         var status = await client.GetStatusAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(FlaxBridgeStatus.Disconnected, status);
+    }
+
+    [Fact]
+    public async Task PingAsync_WithoutHandshake_ThrowsClientVisibleErrorWithoutProjectPath()
+    {
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var exception = await Assert.ThrowsAsync<McpException>(() =>
+            client.PingAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "No Flax Editor bridge session is available for the configured project.",
+            exception.Message);
+        Assert.DoesNotContain(_projectFolder, exception.Message);
     }
 
     [Fact]
@@ -81,6 +96,18 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(FlaxBridgeStatus.Disconnected, status);
     }
 
+    [Fact]
+    public async Task PingAsync_WithStaleHandshake_ThrowsClientVisibleError()
+    {
+        WriteHandshake("FlaxMcpTests-" + Guid.NewGuid().ToString("N"), DateTime.UtcNow);
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var exception = await Assert.ThrowsAsync<McpException>(() =>
+            client.PingAsync(TestContext.Current.CancellationToken));
+
+        Assert.StartsWith("The Flax Editor bridge", exception.Message);
+    }
+
     [Theory]
     [InlineData("{\"id\":1,\"error\":{\"code\":\"action_failed\",\"message\":\"Editor action failed\"}}")]
     [InlineData("{\"id\":1}")]
@@ -104,7 +131,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         var client = new FlaxBridgeClient(_projectFolder, _tempDir);
 
         var exception =
-            await Assert.ThrowsAnyAsync<InvalidOperationException>(()
+            await Assert.ThrowsAnyAsync<McpException>(()
                 => client.PingAsync(TestContext.Current.CancellationToken)
             );
 
@@ -161,7 +188,7 @@ public sealed class FlaxBridgeClientTests : IDisposable
         var client = new FlaxBridgeClient(_projectFolder, _tempDir);
 
         var exception =
-            await Assert.ThrowsAsync<IOException>(() => client.PingAsync(TestContext.Current.CancellationToken)
+            await Assert.ThrowsAsync<McpException>(() => client.PingAsync(TestContext.Current.CancellationToken)
             );
         await serverTask;
 
