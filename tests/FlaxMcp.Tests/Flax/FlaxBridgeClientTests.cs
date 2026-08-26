@@ -444,6 +444,52 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal(new FlaxColor(0.1, 0.2, 0.3), result.BaseColor);
     }
 
+    [Fact]
+    public async Task CreateMaterialInstanceAsync_SendsTypedRequest()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string instanceId = "30ab0a49f20d4ef7ad5252ea595ef3b0";
+        const string baseId = "c5bf75264ac08f205d16eea554e3d16e";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"materialInstanceId\":\"{instanceId}\",\"materialInstancePath\":\"Content/Materials/Test Instance.flax\",\"baseMaterialId\":\"{baseId}\",\"baseMaterialPath\":\"Content/Materials/Test.flax\",\"parameters\":[{{\"name\":\"Tint\",\"type\":\"Color\",\"isOverride\":true,\"value\":{{\"r\":0.1,\"g\":0.2,\"b\":0.3,\"a\":1}}}}]}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            "create_material_instance", $"\"baseMaterialId\":\"{baseId}\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        using var value = JsonDocument.Parse("""{"r":0.1,"g":0.2,"b":0.3,"a":1}""");
+
+        var result = await client.CreateMaterialInstanceAsync(
+            "Materials/Test Instance.flax", baseId,
+            new Dictionary<string, JsonElement> { ["Tint"] = value.RootElement.Clone() },
+            TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(instanceId, result.MaterialInstanceId);
+        Assert.Equal(baseId, result.BaseMaterialId);
+        Assert.True(Assert.Single(result.Parameters).IsOverride);
+    }
+
+    [Fact]
+    public async Task SetMaterialInstanceParameterAsync_SendsTypedRequest()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string instanceId = "30ab0a49f20d4ef7ad5252ea595ef3b0";
+        const string baseId = "c5bf75264ac08f205d16eea554e3d16e";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"materialInstanceId\":\"{instanceId}\",\"materialInstancePath\":\"Content/Materials/Test Instance.flax\",\"baseMaterialId\":\"{baseId}\",\"baseMaterialPath\":\"Content/Materials/Test.flax\",\"parameters\":[{{\"name\":\"Roughness\",\"type\":\"Float\",\"isOverride\":true,\"value\":0.4}}]}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            "set_material_instance_parameter", "\"parameterName\":\"Roughness\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+        using var value = JsonDocument.Parse("0.4");
+
+        var result = await client.SetMaterialInstanceParameterAsync(
+            instanceId, "Roughness", value.RootElement.Clone(), TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(0.4, Assert.Single(result.Parameters).Value.GetDouble());
+    }
+
     [Theory]
     [InlineData("box_collider_details", false)]
     [InlineData("create_box_collider", true)]

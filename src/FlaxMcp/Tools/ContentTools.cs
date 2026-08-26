@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json;
 using FlaxMcp.Flax;
 using FlaxMcp.Flax.Models;
 using ModelContextProtocol.Server;
@@ -63,5 +64,29 @@ public sealed class ContentTools
         CancellationToken cancellationToken = default)
     {
         return _bridgeClient.GetMaterialDetailsAsync(materialId, cancellationToken);
+    }
+
+    [McpServerTool(Name = "content_create_material_instance", UseStructuredContent = true)]
+    [Description("Creates a MaterialInstance asset from a live surface material and applies validated parameter overrides atomically.")]
+    public Task<FlaxMaterialInstanceDetails> CreateMaterialInstanceAsync(
+        [Description("Destination path relative to Content/, ending in .flax.")] string relativePath,
+        [Description("Base FlaxEngine.Material GUID from content_search.")] string baseMaterialId,
+        [Description("Parameter overrides keyed by public parameter name.")] Dictionary<string, JsonElement> parameters,
+        CancellationToken cancellationToken = default)
+    {
+        return _bridgeClient.CreateMaterialInstanceAsync(
+            relativePath, baseMaterialId, parameters, cancellationToken);
+    }
+
+    [McpServerTool(Name = "content_set_material_instance_parameter", UseStructuredContent = true)]
+    [Description("Sets one validated parameter override on an existing MaterialInstance and saves the asset.")]
+    public Task<FlaxMaterialInstanceDetails> SetMaterialInstanceParameterAsync(
+        [Description("FlaxEngine.MaterialInstance asset GUID from content_search.")] string materialInstanceId,
+        [Description("Existing public parameter name on the base material.")] string parameterName,
+        [Description("Value matching the parameter's declared type.")] JsonElement value,
+        CancellationToken cancellationToken = default)
+    {
+        return _bridgeClient.SetMaterialInstanceParameterAsync(
+            materialInstanceId, parameterName, value, cancellationToken);
     }
 }

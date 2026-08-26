@@ -26,7 +26,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 13;
+    private const int ProtocolVersion = 14;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private const double AssetLoadTimeoutMilliseconds = 3500;
@@ -209,6 +209,14 @@ internal sealed class PipeBridgeServer : IDisposable
                 OptionalParam(root, "normalTextureId"), OptionalObjectParam(root, "uvTiling")
             ),
             "material_details" => await GetMaterialDetailsAsync(RequireParam(root, "materialId")),
+            "create_material_instance" => await CreateMaterialInstanceAsync(
+                RequireParam(root, "relativePath"), RequireParam(root, "baseMaterialId"),
+                RequireObjectParam(root, "parameters")
+            ),
+            "set_material_instance_parameter" => await SetMaterialInstanceParameterAsync(
+                RequireParam(root, "materialInstanceId"), RequireParam(root, "parameterName"),
+                RequireValueParam(root, "value")
+            ),
             "box_collider_details" => await GetBoxColliderDetailsAsync(RequireParam(root, "actorId")),
             "create_box_collider" => await CreateBoxColliderAsync(
                 RequireParam(root, "parentId"), RequireParam(root, "name"),
@@ -309,6 +317,13 @@ internal sealed class PipeBridgeServer : IDisposable
         }
 
         throw new ArgumentException($"Missing required params.{name} object");
+    }
+
+    private static JsonElement RequireValueParam(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("params", out var paramsElement) && paramsElement.TryGetProperty(name, out var value))
+            return value.Clone();
+        throw new ArgumentException($"Missing required params.{name}");
     }
 
     private static JsonElement? OptionalObjectParam(JsonElement root, string name)
@@ -756,8 +771,14 @@ internal sealed class PipeBridgeServer : IDisposable
     private static async Task CleanupFailedMaterialAsync(
         string path, string directory, bool directoryExisted, Material? material)
     {
-        if (material is not null)
-            await InvokeOnUpdateAsync(() => { Content.UnloadAsset(material); return true; });
+        await CleanupFailedAssetAsync(path, directory, directoryExisted, material);
+    }
+
+    private static async Task CleanupFailedAssetAsync(
+        string path, string directory, bool directoryExisted, Asset? asset)
+    {
+        if (asset is not null)
+            await InvokeOnUpdateAsync(() => { Content.UnloadAsset(asset); return true; });
         await InvokeOnUpdateAsync(() =>
         {
             var item = FlaxEditor.Editor.Instance.ContentDatabase.Find(path) as AssetItem;
@@ -805,6 +826,202 @@ internal sealed class PipeBridgeServer : IDisposable
                 throw new InvalidOperationException($"Material asset '{materialId}' is not a surface material.");
             return BuildMaterialDetails(material);
         });
+    }
+
+    private static async Task<object> CreateMaterialInstanceAsync(
+        string relativePath, string baseMaterialId, JsonElement parameters)
+    {
+        if (!TryParseContentGuid(baseMaterialId, out var baseId))
+            throw new ArgumentException($"Base material id '{baseMaterialId}' is not a valid GUID.");
+        var path = (string)await InvokeOnUpdateAsync(() => ResolveContentPath(relativePath));
+        var directory = Path.GetDirectoryName(path)!;
+        var directoryExisted = Directory.Exists(directory);
+        MaterialInstance? createdInstance = null;
+        var mutationStarted = false;
+        try
+        {
+            return await InvokeOnUpdateAsync(() =>
+            {
+                if (File.Exists(path) || FlaxEditor.Editor.Instance.ContentDatabase.Find(path) is not null)
+                    throw new InvalidOperationException($"A content item already exists at '{relativePath}'.");
+                var baseMaterial = LoadSurfaceMaterial(baseId, baseMaterialId);
+                var overrides = ReadMaterialParameterOverrides(baseMaterial, parameters);
+                Directory.CreateDirectory(directory);
+                mutationStarted = true;
+                new MaterialInstanceProxy().Create(path, null);
+                RefreshContentDatabase();
+                var item = FlaxEditor.Editor.Instance.ContentDatabase.Find(path) as AssetItem ??
+                    throw new InvalidOperationException("The created material instance was not registered in the Content Database.");
+                item.LoadAsync();
+                var instance = createdInstance = Content.LoadAsync<MaterialInstance>(item.ID) ??
+                    throw new InvalidOperationException("The created material instance could not be loaded.");
+                if (instance.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !instance.IsLoaded)
+                    throw new InvalidOperationException("The created material instance could not be loaded.");
+                instance.BaseMaterial = baseMaterial;
+                foreach (var entry in overrides)
+                    instance.SetParameterValue(entry.Key, entry.Value, true);
+                if (instance.Save(path))
+                    throw new InvalidOperationException("The material instance could not be saved.");
+                return BuildMaterialInstanceDetails(instance);
+            });
+        }
+        catch
+        {
+            if (mutationStarted)
+                await CleanupFailedAssetAsync(path, directory, directoryExisted, createdInstance);
+            throw;
+        }
+    }
+
+    private static Task<object> SetMaterialInstanceParameterAsync(
+        string materialInstanceId, string parameterName, JsonElement value)
+    {
+        if (!TryParseContentGuid(materialInstanceId, out var id))
+            throw new ArgumentException($"Material instance id '{materialInstanceId}' is not a valid GUID.");
+        return InvokeOnUpdateAsync(() =>
+        {
+            var instance = Content.LoadAsync<MaterialInstance>(id) ??
+                throw new KeyNotFoundException(
+                    $"Material instance '{materialInstanceId}' does not exist or is not a FlaxEngine.MaterialInstance.");
+            if (instance.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !instance.IsLoaded)
+                throw new InvalidOperationException($"Material instance '{materialInstanceId}' could not be loaded.");
+            var baseMaterial = instance.BaseMaterial ??
+                throw new InvalidOperationException($"Material instance '{materialInstanceId}' has no base material.");
+            if (!baseMaterial.IsSurface)
+                throw new InvalidOperationException("The base material is not a surface material.");
+            var parameter = FindPublicParameter(baseMaterial, parameterName);
+            var converted = ReadMaterialParameterValue(parameter.ParameterType.ToString(), value, parameterName);
+            instance.SetParameterValue(parameterName, converted, true);
+            if (instance.Save(instance.Path))
+                throw new InvalidOperationException("The material instance could not be saved.");
+            return BuildMaterialInstanceDetails(instance);
+        });
+    }
+
+    private static Material LoadSurfaceMaterial(Guid id, string materialId)
+    {
+        var material = Content.LoadAsync<Material>(id) ??
+            throw new KeyNotFoundException($"Base material '{materialId}' does not exist or is not a FlaxEngine.Material.");
+        if (material.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !material.IsLoaded)
+            throw new InvalidOperationException($"Base material '{materialId}' could not be loaded.");
+        if (!material.IsSurface)
+            throw new InvalidOperationException($"Base material '{materialId}' is not a surface material.");
+        return material;
+    }
+
+    private static Dictionary<string, object> ReadMaterialParameterOverrides(Material material, JsonElement parameters)
+    {
+        var result = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var property in parameters.EnumerateObject())
+        {
+            var parameter = FindPublicParameter(material, property.Name);
+            result.Add(property.Name,
+                ReadMaterialParameterValue(parameter.ParameterType.ToString(), property.Value, property.Name));
+        }
+        return result;
+    }
+
+    private static MaterialParameter FindPublicParameter(MaterialBase material, string name)
+    {
+        var parameter = material.Parameters.FirstOrDefault(candidate => candidate.Name == name) ??
+            throw new ArgumentException($"Material parameter '{name}' does not exist.");
+        if (!parameter.IsPublic)
+            throw new ArgumentException($"Material parameter '{name}' is not public.");
+        return parameter;
+    }
+
+    private static object ReadMaterialParameterValue(string type, JsonElement value, string name)
+    {
+        return type switch
+        {
+            "Color" => ReadColor(value, name),
+            "Float" => ReadFiniteFloat(value, name),
+            "Vector2" => ReadFiniteFloat2(value, name),
+            "Vector3" => ReadFiniteFloat3(value, name),
+            "Vector4" => ReadFiniteFloat4(value, name),
+            "Texture" => LoadParameterTexture(value, name),
+            "Bool" when value.ValueKind is JsonValueKind.True or JsonValueKind.False => value.GetBoolean(),
+            "Bool" => throw new ArgumentException($"Material parameter '{name}' requires a boolean value."),
+            _ => throw new NotSupportedException($"Material parameter '{name}' has unsupported type '{type}'."),
+        };
+    }
+
+    private static float ReadFiniteFloat(JsonElement value, string name)
+    {
+        var result = value.GetSingle();
+        if (!float.IsFinite(result))
+            throw new ArgumentException($"Material parameter '{name}' must be finite.");
+        return result;
+    }
+
+    private static Float2 ReadFiniteFloat2(JsonElement value, string name)
+    {
+        var result = new Float2(value.GetProperty("x").GetSingle(), value.GetProperty("y").GetSingle());
+        if (!float.IsFinite(result.X) || !float.IsFinite(result.Y))
+            throw new ArgumentException($"Material parameter '{name}' components must be finite.");
+        return result;
+    }
+
+    private static Float3 ReadFiniteFloat3(JsonElement value, string name)
+    {
+        var result = new Float3(value.GetProperty("x").GetSingle(), value.GetProperty("y").GetSingle(),
+            value.GetProperty("z").GetSingle());
+        if (!IsFinite(result))
+            throw new ArgumentException($"Material parameter '{name}' components must be finite.");
+        return result;
+    }
+
+    private static Float4 ReadFiniteFloat4(JsonElement value, string name)
+    {
+        var result = new Float4(value.GetProperty("x").GetSingle(), value.GetProperty("y").GetSingle(),
+            value.GetProperty("z").GetSingle(), value.GetProperty("w").GetSingle());
+        if (!float.IsFinite(result.X) || !float.IsFinite(result.Y) || !float.IsFinite(result.Z) || !float.IsFinite(result.W))
+            throw new ArgumentException($"Material parameter '{name}' components must be finite.");
+        return result;
+    }
+
+    private static Texture LoadParameterTexture(JsonElement value, string name)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+            throw new ArgumentException($"Material parameter '{name}' requires a texture GUID.");
+        return LoadTexture(value.GetString(), false) ??
+            throw new ArgumentException($"Material parameter '{name}' requires a texture GUID.");
+    }
+
+    private static object BuildMaterialInstanceDetails(MaterialInstance instance)
+    {
+        var baseMaterial = instance.BaseMaterial ??
+            throw new InvalidOperationException("The material instance has no base material.");
+        return new
+        {
+            mainThreadId = Globals.MainThreadID,
+            materialInstanceId = FormatContentGuid(instance.ID),
+            materialInstancePath = instance.Path,
+            baseMaterialId = FormatContentGuid(baseMaterial.ID),
+            baseMaterialPath = baseMaterial.Path,
+            parameters = instance.Parameters.Select(parameter => new
+            {
+                name = parameter.Name,
+                type = parameter.ParameterType.ToString(),
+                isOverride = parameter.IsOverride,
+                value = BuildMaterialParameterValue(parameter.Value),
+            }).ToArray(),
+        };
+    }
+
+    private static object? BuildMaterialParameterValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            Color color => BuildColor(color),
+            Float2 vector => BuildVector2(vector),
+            Float3 vector => new { x = vector.X, y = vector.Y, z = vector.Z },
+            Float4 vector => new { x = vector.X, y = vector.Y, z = vector.Z, w = vector.W },
+            Texture texture => FormatContentGuid(texture.ID),
+            Guid id => FormatContentGuid(id),
+            _ => value,
+        };
     }
 
     private static void WriteMaterialGraph(

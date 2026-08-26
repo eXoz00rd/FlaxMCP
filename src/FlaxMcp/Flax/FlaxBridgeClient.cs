@@ -59,6 +59,14 @@ public interface IFlaxBridgeClient
     Task<FlaxMaterialDetails> GetMaterialDetailsAsync(
         string materialId, CancellationToken cancellationToken = default);
 
+    Task<FlaxMaterialInstanceDetails> CreateMaterialInstanceAsync(
+        string relativePath, string baseMaterialId, IReadOnlyDictionary<string, JsonElement> parameters,
+        CancellationToken cancellationToken = default);
+
+    Task<FlaxMaterialInstanceDetails> SetMaterialInstanceParameterAsync(
+        string materialInstanceId, string parameterName, JsonElement value,
+        CancellationToken cancellationToken = default);
+
     Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
         string actorId, CancellationToken cancellationToken = default);
 
@@ -83,7 +91,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 13;
+    internal const int CurrentProtocolVersion = 14;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -288,6 +296,22 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxMaterialDetails>(RequireHandshake(), "material_details",
             new { materialId }, cancellationToken);
+    }
+
+    public Task<FlaxMaterialInstanceDetails> CreateMaterialInstanceAsync(
+        string relativePath, string baseMaterialId, IReadOnlyDictionary<string, JsonElement> parameters,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxMaterialInstanceDetails>(RequireHandshake(), "create_material_instance",
+            new { relativePath, baseMaterialId, parameters }, cancellationToken);
+    }
+
+    public Task<FlaxMaterialInstanceDetails> SetMaterialInstanceParameterAsync(
+        string materialInstanceId, string parameterName, JsonElement value,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxMaterialInstanceDetails>(RequireHandshake(), "set_material_instance_parameter",
+            new { materialInstanceId, parameterName, value }, cancellationToken);
     }
 
     public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
@@ -590,6 +614,20 @@ public sealed record FlaxMaterialParameterDetails(
     string Type,
     bool IsPublic,
     bool IsOverride);
+
+public sealed record FlaxMaterialInstanceDetails(
+    int MainThreadId,
+    string MaterialInstanceId,
+    string MaterialInstancePath,
+    string BaseMaterialId,
+    string? BaseMaterialPath,
+    IReadOnlyList<FlaxMaterialInstanceParameterDetails> Parameters);
+
+public sealed record FlaxMaterialInstanceParameterDetails(
+    string Name,
+    string Type,
+    bool IsOverride,
+    JsonElement Value);
 
 public sealed record FlaxBoxColliderDetails(
     int MainThreadId,
