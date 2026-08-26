@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FlaxMcp.Flax;
 using FlaxMcp.Tools;
 using Xunit;
@@ -137,6 +138,20 @@ public class ServerInfoToolTests
 
         public Task<FlaxMaterialDetails> GetMaterialDetailsAsync(
             string materialId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxMaterialInstanceDetails> CreateMaterialInstanceAsync(
+            string relativePath, string baseMaterialId, IReadOnlyDictionary<string, JsonElement> parameters,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxMaterialInstanceDetails> SetMaterialInstanceParameterAsync(
+            string materialInstanceId, string parameterName, JsonElement value,
+            CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }
