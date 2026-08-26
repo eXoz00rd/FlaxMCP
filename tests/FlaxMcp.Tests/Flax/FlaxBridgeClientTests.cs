@@ -404,6 +404,46 @@ public sealed class FlaxBridgeClientTests : IDisposable
         Assert.Equal("actor-id", result.Actor.Id);
     }
 
+    [Fact]
+    public async Task CreateMaterialAsync_SendsTypedRequest()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string materialId = "30ab0a49f20d4ef7ad5252ea595ef3b0";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"materialId\":\"{materialId}\",\"materialPath\":\"Content/Materials/Test.flax\",\"baseColor\":{{\"r\":0.1,\"g\":0.2,\"b\":0.3,\"a\":1}},\"roughness\":0.8,\"metallic\":0.1,\"emissiveColor\":null,\"baseColorTextureId\":null,\"normalTextureId\":null,\"uvTiling\":null,\"parameters\":[]}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            "create_material", "\"relativePath\":\"Materials/Test.flax\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.CreateMaterialAsync(
+            "Materials/Test.flax", new FlaxColor(0.1, 0.2, 0.3), 0.8, 0.1,
+            null, null, null, null, TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal(materialId, result.MaterialId);
+        Assert.Equal(0.8, result.Roughness);
+    }
+
+    [Fact]
+    public async Task GetMaterialDetailsAsync_SendsTypedRequest()
+    {
+        var pipeName = "FlaxMcpTests-" + Guid.NewGuid().ToString("N");
+        WriteHandshake(pipeName, DateTime.UtcNow);
+        const string materialId = "30ab0a49f20d4ef7ad5252ea595ef3b0";
+        var response =
+            $"{{\"id\":1,\"result\":{{\"mainThreadId\":7,\"materialId\":\"{materialId}\",\"materialPath\":\"Content/Materials/Test.flax\",\"baseColor\":{{\"r\":0.1,\"g\":0.2,\"b\":0.3,\"a\":1}},\"roughness\":0.8,\"metallic\":0.1,\"emissiveColor\":null,\"baseColorTextureId\":null,\"normalTextureId\":null,\"uvTiling\":null,\"parameters\":[]}}}}";
+        var serverTask = ServeResponseAsync(pipeName, response, TestContext.Current.CancellationToken,
+            "material_details", $"\"materialId\":\"{materialId}\"");
+        var client = new FlaxBridgeClient(_projectFolder, _tempDir);
+
+        var result = await client.GetMaterialDetailsAsync(materialId, TestContext.Current.CancellationToken);
+        await serverTask;
+
+        Assert.Equal("Content/Materials/Test.flax", result.MaterialPath);
+        Assert.Equal(new FlaxColor(0.1, 0.2, 0.3), result.BaseColor);
+    }
+
     [Theory]
     [InlineData("box_collider_details", false)]
     [InlineData("create_box_collider", true)]

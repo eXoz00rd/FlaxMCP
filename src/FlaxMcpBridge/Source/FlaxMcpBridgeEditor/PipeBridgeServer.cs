@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
@@ -11,6 +12,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FlaxEngine;
+using FlaxEditor.Content;
+using FlaxEditor.Surface;
 using FlaxEditor.Windows;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -23,7 +26,7 @@ namespace FlaxMcpBridge.Editor;
 /// </summary>
 internal sealed class PipeBridgeServer : IDisposable
 {
-    private const int ProtocolVersion = 12;
+    private const int ProtocolVersion = 13;
     private const int MaxSceneGraphDepth = 32;
     private const int MaxSceneGraphNodes = 500;
     private const double AssetLoadTimeoutMilliseconds = 3500;
@@ -191,6 +194,13 @@ internal sealed class PipeBridgeServer : IDisposable
                 RequireParam(root, "actorId"), RequireIntParam(root, "slotIndex"),
                 RequireParam(root, "materialId")
             ),
+            "create_material" => await CreateMaterialAsync(
+                RequireParam(root, "relativePath"), RequireObjectParam(root, "baseColor"),
+                RequireDoubleParam(root, "roughness"), RequireDoubleParam(root, "metallic"),
+                OptionalObjectParam(root, "emissiveColor"), OptionalParam(root, "baseColorTextureId"),
+                OptionalParam(root, "normalTextureId"), OptionalObjectParam(root, "uvTiling")
+            ),
+            "material_details" => await GetMaterialDetailsAsync(RequireParam(root, "materialId")),
             "box_collider_details" => await GetBoxColliderDetailsAsync(RequireParam(root, "actorId")),
             "create_box_collider" => await CreateBoxColliderAsync(
                 RequireParam(root, "parentId"), RequireParam(root, "name"),
@@ -291,6 +301,24 @@ internal sealed class PipeBridgeServer : IDisposable
         }
 
         throw new ArgumentException($"Missing required params.{name} object");
+    }
+
+    private static JsonElement? OptionalObjectParam(JsonElement root, string name)
+    {
+        return root.TryGetProperty("params", out var paramsElement) &&
+               paramsElement.TryGetProperty(name, out var value) &&
+               value.ValueKind == JsonValueKind.Object ? value.Clone() : null;
+    }
+
+    private static double RequireDoubleParam(JsonElement root, string name)
+    {
+        if (root.TryGetProperty("params", out var paramsElement) &&
+            paramsElement.TryGetProperty(name, out var value) && value.TryGetDouble(out var doubleValue))
+        {
+            return doubleValue;
+        }
+
+        throw new ArgumentException($"Missing required params.{name} number");
     }
 
     private static bool RequireBoolParam(JsonElement root, string name)
@@ -565,7 +593,7 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static Task<object> SetStaticModelAsync(string actorId, string modelId)
     {
-        if (!Guid.TryParse(modelId, out var id))
+        if (!TryParseContentGuid(modelId, out var id))
         {
             throw new ArgumentException($"Model id '{modelId}' is not a valid GUID.");
         }
@@ -598,7 +626,7 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static Task<object> SetStaticModelMaterialAsync(string actorId, int slotIndex, string materialId)
     {
-        if (!Guid.TryParse(materialId, out var id))
+        if (!TryParseContentGuid(materialId, out var id))
         {
             throw new ArgumentException($"Material id '{materialId}' is not a valid GUID.");
         }
@@ -655,9 +683,386 @@ internal sealed class PipeBridgeServer : IDisposable
             mainThreadId = Globals.MainThreadID,
             actor = BuildActorDetails(actor),
             slotIndex,
-            materialId = material.ID.ToString("N"),
+            materialId = FormatContentGuid(material.ID),
             materialPath = material.Path,
         };
+    }
+
+    private static async Task<object> CreateMaterialAsync(
+        string relativePath, JsonElement baseColor, double roughness, double metallic,
+        JsonElement? emissiveColor, string? baseColorTextureId, string? normalTextureId,
+        JsonElement? uvTiling)
+    {
+        var color = ReadColor(baseColor, "baseColor");
+        var emissive = emissiveColor.HasValue ? ReadColor(emissiveColor.Value, "emissiveColor") : (Color?)null;
+        ValidateUnitValue(roughness, "roughness");
+        ValidateUnitValue(metallic, "metallic");
+        var tiling = uvTiling.HasValue ? ReadPositiveFloat2(uvTiling.Value, "uvTiling") : (Float2?)null;
+        if (tiling.HasValue && baseColorTextureId is null && normalTextureId is null)
+        {
+            throw new ArgumentException("uvTiling requires baseColorTextureId or normalTextureId.");
+        }
+
+        var path = (string)await InvokeOnUpdateAsync(() => ResolveContentPath(relativePath));
+        var directory = Path.GetDirectoryName(path)!;
+        var directoryExisted = Directory.Exists(directory);
+        Material? createdMaterial = null;
+        var mutationStarted = false;
+        try
+        {
+            return await InvokeOnUpdateAsync(() =>
+            {
+                if (File.Exists(path) || FlaxEditor.Editor.Instance.ContentDatabase.Find(path) is not null)
+                    throw new InvalidOperationException($"A content item already exists at '{relativePath}'.");
+                var baseTexture = LoadTexture(baseColorTextureId, false);
+                var normalTexture = LoadTexture(normalTextureId, true);
+                Directory.CreateDirectory(directory);
+                mutationStarted = true;
+                new MaterialProxy().Create(path, null);
+                RefreshContentDatabase();
+                var item = FlaxEditor.Editor.Instance.ContentDatabase.Find(path) as AssetItem ??
+                    throw new InvalidOperationException("The created material was not registered in the Content Database.");
+                item.LoadAsync();
+                var material = createdMaterial = Content.LoadAsync<Material>(item.ID) ??
+                    throw new InvalidOperationException("The created material could not be loaded.");
+                if (material.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !material.IsLoaded)
+                {
+                    throw new InvalidOperationException(
+                        $"The created material could not be loaded within {AssetLoadTimeoutMilliseconds:0} ms."
+                    );
+                }
+
+                WriteMaterialGraph(material, color, (float)roughness, (float)metallic, emissive,
+                    baseTexture, normalTexture, tiling);
+                return BuildMaterialDetails(material);
+            });
+        }
+        catch
+        {
+            if (mutationStarted)
+                await CleanupFailedMaterialAsync(path, directory, directoryExisted, createdMaterial);
+            throw;
+        }
+    }
+
+    private static async Task CleanupFailedMaterialAsync(
+        string path, string directory, bool directoryExisted, Material? material)
+    {
+        if (material is not null)
+            await InvokeOnUpdateAsync(() => { Content.UnloadAsset(material); return true; });
+        await InvokeOnUpdateAsync(() =>
+        {
+            var item = FlaxEditor.Editor.Instance.ContentDatabase.Find(path) as AssetItem;
+            if (item is not null)
+                FlaxEditor.Editor.Instance.ContentDatabase.Delete(item, true);
+            else if (File.Exists(path))
+                File.Delete(path);
+            return true;
+        });
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var removed = (bool)await InvokeOnUpdateAsync(() =>
+            {
+                RefreshContentDatabase();
+                return !File.Exists(path) && FlaxEditor.Editor.Instance.ContentDatabase.Find(path) is null;
+            });
+            if (removed)
+            {
+                if (!directoryExisted && Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+                    Directory.Delete(directory);
+                return;
+            }
+        }
+        throw new InvalidOperationException($"Failed to remove partial material asset '{path}'.");
+    }
+
+    private static Task<object> GetMaterialDetailsAsync(string materialId)
+    {
+        if (!TryParseContentGuid(materialId, out var id))
+            throw new ArgumentException($"Material id '{materialId}' is not a valid GUID.");
+
+        return InvokeOnUpdateAsync(() =>
+        {
+            var material = Content.LoadAsync<Material>(id) ??
+                throw new KeyNotFoundException(
+                    $"Material asset '{materialId}' does not exist or is not a FlaxEngine.Material."
+                );
+            if (material.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !material.IsLoaded)
+            {
+                throw new InvalidOperationException(
+                    $"Material asset '{materialId}' could not be loaded within {AssetLoadTimeoutMilliseconds:0} ms."
+                );
+            }
+            if (!material.IsSurface)
+                throw new InvalidOperationException($"Material asset '{materialId}' is not a surface material.");
+            return BuildMaterialDetails(material);
+        });
+    }
+
+    private static void WriteMaterialGraph(
+        Material material, Color baseColor, float roughness, float metallic, Color? emissive,
+        Texture? baseTexture, Texture? normalTexture, Float2? uvTiling)
+    {
+        var owner = new MaterialSurfaceOwner(material.LoadSurface(false));
+        var surface = new MaterialSurface(owner);
+        try
+        {
+            if (surface.Load())
+                throw new InvalidOperationException("The editor-generated material graph could not be loaded.");
+            var main = surface.Nodes.Single(node => node.Type == 65537);
+            var colorNode = surface.Context.SpawnNode(2, 7, new Float2(-500, -100), [baseColor], null);
+            SurfaceNode colorOutput = colorNode;
+            var textures = new List<SurfaceNode>();
+            if (baseTexture is not null)
+            {
+                var texture = surface.Context.SpawnNode(5, 1, new Float2(-700, -200), [baseTexture.ID], null);
+                var multiply = surface.Context.SpawnNode(3, 3, new Float2(-300, -100), null, null);
+                Connect(texture, 1, multiply, 0);
+                Connect(colorNode, 0, multiply, 1);
+                colorOutput = multiply;
+                textures.Add(texture);
+            }
+            Connect(colorOutput, colorOutput == colorNode ? 0 : 2, main, 1);
+
+            var roughnessNode = surface.Context.SpawnNode(2, 3, new Float2(-300, 100), [roughness], null);
+            var metallicNode = surface.Context.SpawnNode(2, 3, new Float2(-300, 180), [metallic], null);
+            Connect(roughnessNode, 0, main, 6);
+            Connect(metallicNode, 0, main, 4);
+            if (emissive.HasValue)
+            {
+                var emissiveNode = surface.Context.SpawnNode(2, 7, new Float2(-300, 260), [emissive.Value], null);
+                Connect(emissiveNode, 0, main, 3);
+            }
+            if (normalTexture is not null)
+            {
+                var texture = surface.Context.SpawnNode(5, 4, new Float2(-700, 320), [normalTexture.ID], null);
+                Connect(texture, 1, main, 8);
+                textures.Add(texture);
+            }
+            if (uvTiling.HasValue)
+            {
+                var coordinates = surface.Context.SpawnNode(5, 2, new Float2(-1100, 0), [0u], null);
+                var scale = surface.Context.SpawnNode(2, 4, new Float2(-1100, 100), [uvTiling.Value], null);
+                var multiply = surface.Context.SpawnNode(3, 3, new Float2(-900, 50), null, null);
+                Connect(coordinates, 0, multiply, 0);
+                Connect(scale, 0, multiply, 1);
+                foreach (var texture in textures)
+                    Connect(multiply, 2, texture, 0);
+            }
+
+            if (surface.Save())
+                throw new InvalidOperationException("The material graph could not be serialized.");
+            if (material.SaveSurface(owner.SurfaceData, MaterialInfo.Default))
+                throw new InvalidOperationException("The material graph could not be saved.");
+        }
+        finally
+        {
+            surface.Dispose();
+        }
+    }
+
+    private static object BuildMaterialDetails(Material material)
+    {
+        var owner = new MaterialSurfaceOwner(material.LoadSurface(false));
+        var surface = new MaterialSurface(owner);
+        try
+        {
+            if (surface.Load())
+                throw new InvalidOperationException("The material graph could not be loaded.");
+            var main = surface.Nodes.Single(node => node.Type == 65537);
+            var colorSource = GetSource(main, 1);
+            var baseTexture = FindNode(colorSource, 5, 1);
+            var colorNode = FindNode(colorSource, 2, 7) ??
+                throw UnsupportedMaterialGraph("base color");
+            var roughness = GetRequiredFloatValue(main, 6, "roughness");
+            var metallic = GetRequiredFloatValue(main, 4, "metallic");
+            var normalTexture = FindNode(GetSource(main, 8), 5, 4);
+            var texture = baseTexture ?? normalTexture;
+            var uvMultiply = texture is null ? null : GetSource(texture, 0);
+            var tilingNode = FindNode(uvMultiply, 2, 4);
+            var emissiveNode = FindNode(GetSource(main, 3), 2, 7);
+            return new
+            {
+                mainThreadId = Globals.MainThreadID,
+                materialId = FormatContentGuid(material.ID),
+                materialPath = material.Path,
+                baseColor = BuildColor((Color)colorNode.Values[0]),
+                roughness,
+                metallic,
+                emissiveColor = emissiveNode?.Values?[0] is Color emissive ? BuildColor(emissive) : null,
+                baseColorTextureId = baseTexture?.Values?[0] is Guid baseId ? FormatContentGuid(baseId) : null,
+                normalTextureId = normalTexture?.Values?[0] is Guid normalId ? FormatContentGuid(normalId) : null,
+                uvTiling = tilingNode?.Values?[0] is Float2 tiling ? BuildVector2(tiling) : null,
+                parameters = material.Parameters.Select(parameter => new
+                {
+                    name = parameter.Name,
+                    type = parameter.ParameterType.ToString(),
+                    isPublic = parameter.IsPublic,
+                    isOverride = parameter.IsOverride,
+                }).ToArray(),
+            };
+        }
+        finally
+        {
+            surface.Dispose();
+        }
+    }
+
+    private static void Connect(SurfaceNode source, int sourceBox, SurfaceNode target, int targetBox)
+    {
+        target.GetBox(targetBox).CreateConnection(source.GetBox(sourceBox));
+    }
+
+    private static SurfaceNode? GetSource(SurfaceNode node, int inputBox)
+    {
+        return node.GetBox(inputBox).Connections.FirstOrDefault()?.ParentNode;
+    }
+
+    private static SurfaceNode? FindNode(SurfaceNode? node, ushort group, ushort type)
+    {
+        if (node is null)
+            return null;
+        if (node.GroupArchetype.GroupID == group && node.Archetype.TypeID == type)
+            return node;
+        return node.Elements.OfType<FlaxEditor.Surface.Elements.Box>()
+            .SelectMany(box => box.Connections)
+            .Select(connection => connection.ParentNode)
+            .FirstOrDefault(candidate => candidate.GroupArchetype.GroupID == group && candidate.Archetype.TypeID == type);
+    }
+
+    private static float GetRequiredFloatValue(SurfaceNode main, int inputBox, string propertyName)
+    {
+        return GetSource(main, inputBox)?.Values?[0] is float value ?
+            value :
+            throw UnsupportedMaterialGraph(propertyName);
+    }
+
+    private static InvalidOperationException UnsupportedMaterialGraph(string propertyName)
+    {
+        return new InvalidOperationException(
+            $"The material graph uses an unsupported {propertyName} expression; no single effective value can be reported."
+        );
+    }
+
+    private static string ResolveContentPath(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath) ||
+            !string.Equals(Path.GetExtension(relativePath), ".flax", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("relativePath must be a relative Content path ending in .flax.");
+        }
+        var segments = relativePath.Replace('\\', '/').Split('/');
+        if (segments.Length == 0 || segments.Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or ".."))
+            throw new ArgumentException("relativePath cannot contain empty, '.' or '..' path segments.");
+        var root = Path.GetFullPath(Globals.ProjectContentFolder);
+        var path = Path.GetFullPath(Path.Combine(root, Path.Combine(segments)));
+        if (!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("relativePath must stay within the project's Content directory.");
+        }
+        return path;
+    }
+
+    private static bool TryParseContentGuid(string value, out Guid result)
+    {
+        result = default;
+        if (value.Length != 32)
+            return false;
+        Span<byte> bytes = stackalloc byte[16];
+        for (var index = 0; index < 4; index++)
+        {
+            if (!uint.TryParse(value.AsSpan(index * 8, 8), System.Globalization.NumberStyles.HexNumber,
+                    null, out var chunk))
+                return false;
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.Slice(index * 4, 4), chunk);
+        }
+        result = new Guid(bytes);
+        return true;
+    }
+
+    private static string FormatContentGuid(Guid value)
+    {
+        var bytes = value.ToByteArray();
+        return string.Concat(Enumerable.Range(0, 4)
+            .Select(index => BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(index * 4, 4)).ToString("x8")));
+    }
+
+    private static Texture? LoadTexture(string? textureId, bool requireNormalMap)
+    {
+        if (textureId is null)
+            return null;
+        if (!TryParseContentGuid(textureId, out var id))
+            throw new ArgumentException($"Texture id '{textureId}' is not a valid GUID.");
+        var texture = Content.LoadAsync<Texture>(id) ??
+            throw new KeyNotFoundException($"Texture asset '{textureId}' does not exist or is not a FlaxEngine.Texture.");
+        if (texture.WaitForLoaded(AssetLoadTimeoutMilliseconds) || !texture.IsLoaded)
+            throw new InvalidOperationException($"Texture asset '{textureId}' could not be loaded.");
+        if (requireNormalMap && !texture.IsNormalMap)
+            throw new InvalidOperationException($"Texture asset '{textureId}' is not imported as a normal map.");
+        return texture;
+    }
+
+    private static Color ReadColor(JsonElement value, string name)
+    {
+        var color = new Color(
+            value.GetProperty("r").GetSingle(), value.GetProperty("g").GetSingle(),
+            value.GetProperty("b").GetSingle(), value.GetProperty("a").GetSingle()
+        );
+        ValidateUnitValue(color.R, $"{name}.r");
+        ValidateUnitValue(color.G, $"{name}.g");
+        ValidateUnitValue(color.B, $"{name}.b");
+        ValidateUnitValue(color.A, $"{name}.a");
+        return color;
+    }
+
+    private static Float2 ReadPositiveFloat2(JsonElement value, string name)
+    {
+        var result = new Float2(value.GetProperty("x").GetSingle(), value.GetProperty("y").GetSingle());
+        if (!float.IsFinite(result.X) || !float.IsFinite(result.Y) || result.X <= 0 || result.Y <= 0)
+            throw new ArgumentException($"{name} components must be finite and greater than zero.");
+        return result;
+    }
+
+    private static void ValidateUnitValue(double value, string name)
+    {
+        if (!double.IsFinite(value) || value < 0 || value > 1)
+            throw new ArgumentOutOfRangeException(name, value, $"{name} must be finite and in the 0-1 range.");
+    }
+
+    private static object BuildColor(Color color)
+    {
+        return new { r = color.R, g = color.G, b = color.B, a = color.A };
+    }
+
+    private static object BuildVector2(Float2 value)
+    {
+        return new { x = value.X, y = value.Y };
+    }
+
+    private static void RefreshContentDatabase()
+    {
+        var database = FlaxEditor.Editor.Instance.ContentDatabase;
+        database.RefreshFolder(database.Game.Folder, true);
+    }
+
+    private sealed class MaterialSurfaceOwner : IVisjectSurfaceOwner
+    {
+        public MaterialSurfaceOwner(byte[] surfaceData)
+        {
+            SurfaceData = surfaceData;
+        }
+
+        public Asset? SurfaceAsset => null;
+        public string? SurfaceName => null;
+        public FlaxEditor.Undo? Undo => null;
+        public byte[] SurfaceData { get; set; }
+        public VisjectSurfaceContext? ParentContext => null;
+
+        public void OnContextCreated(VisjectSurfaceContext context) { }
+        public void OnSurfaceEditedChanged() { }
+        public void OnSurfaceGraphEdited() { }
+        public void OnSurfaceClose() { }
     }
 
     private static object BuildStaticModelDetails(StaticModel actor)
@@ -667,7 +1072,7 @@ internal sealed class PipeBridgeServer : IDisposable
         {
             mainThreadId = Globals.MainThreadID,
             actor = BuildActorDetails(actor),
-            modelId = model?.ID.ToString("N"),
+            modelId = model is null ? null : FormatContentGuid(model.ID),
             modelPath = model?.Path,
             modelIsLoaded = model?.IsLoaded ?? false,
         };

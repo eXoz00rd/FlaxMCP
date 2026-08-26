@@ -51,6 +51,14 @@ public interface IFlaxBridgeClient
     Task<FlaxStaticModelMaterialDetails> SetStaticModelMaterialAsync(
         string actorId, int slotIndex, string materialId, CancellationToken cancellationToken = default);
 
+    Task<FlaxMaterialDetails> CreateMaterialAsync(
+        string relativePath, FlaxColor baseColor, double roughness, double metallic,
+        FlaxColor? emissiveColor, string? baseColorTextureId, string? normalTextureId,
+        FlaxVector2? uvTiling, CancellationToken cancellationToken = default);
+
+    Task<FlaxMaterialDetails> GetMaterialDetailsAsync(
+        string materialId, CancellationToken cancellationToken = default);
+
     Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
         string actorId, CancellationToken cancellationToken = default);
 
@@ -75,7 +83,7 @@ public interface IFlaxBridgeClient
 
 public sealed class FlaxBridgeClient : IFlaxBridgeClient
 {
-    internal const int CurrentProtocolVersion = 12;
+    internal const int CurrentProtocolVersion = 13;
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
 
@@ -254,6 +262,32 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
     {
         return CallAsync<FlaxStaticModelMaterialDetails>(RequireHandshake(), "set_static_model_material",
             new { actorId, slotIndex, materialId }, cancellationToken);
+    }
+
+    public Task<FlaxMaterialDetails> CreateMaterialAsync(
+        string relativePath, FlaxColor baseColor, double roughness, double metallic,
+        FlaxColor? emissiveColor, string? baseColorTextureId, string? normalTextureId,
+        FlaxVector2? uvTiling, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxMaterialDetails>(RequireHandshake(), "create_material",
+            new
+            {
+                relativePath,
+                baseColor,
+                roughness,
+                metallic,
+                emissiveColor,
+                baseColorTextureId,
+                normalTextureId,
+                uvTiling,
+            }, cancellationToken);
+    }
+
+    public Task<FlaxMaterialDetails> GetMaterialDetailsAsync(
+        string materialId, CancellationToken cancellationToken = default)
+    {
+        return CallAsync<FlaxMaterialDetails>(RequireHandshake(), "material_details",
+            new { materialId }, cancellationToken);
     }
 
     public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
@@ -510,6 +544,10 @@ public sealed record FlaxActorTransform(
 
 public sealed record FlaxVector3(double X, double Y, double Z);
 
+public sealed record FlaxVector2(double X, double Y);
+
+public sealed record FlaxColor(double R, double G, double B, double A = 1.0);
+
 public sealed record FlaxQuaternion(double X, double Y, double Z, double W);
 
 public sealed record FlaxActorScript(string Id, string TypeName, bool Enabled, bool IsEnabledInHierarchy);
@@ -533,6 +571,25 @@ public sealed record FlaxStaticModelMaterialDetails(
     int SlotIndex,
     string MaterialId,
     string? MaterialPath);
+
+public sealed record FlaxMaterialDetails(
+    int MainThreadId,
+    string MaterialId,
+    string MaterialPath,
+    FlaxColor BaseColor,
+    double Roughness,
+    double Metallic,
+    FlaxColor? EmissiveColor,
+    string? BaseColorTextureId,
+    string? NormalTextureId,
+    FlaxVector2? UvTiling,
+    IReadOnlyList<FlaxMaterialParameterDetails> Parameters);
+
+public sealed record FlaxMaterialParameterDetails(
+    string Name,
+    string Type,
+    bool IsPublic,
+    bool IsOverride);
 
 public sealed record FlaxBoxColliderDetails(
     int MainThreadId,

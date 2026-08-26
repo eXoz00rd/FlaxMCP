@@ -23,7 +23,7 @@ public sealed class ContentToolsTests : IDisposable
         );
 
         var index = new FlaxContentIndex(Options.Create(new FlaxMcpOptions { ProjectPath = _tempDir }));
-        _tool = new ContentTools(index);
+        _tool = new ContentTools(index, new FlaxBridgeClient(_tempDir, _tempDir));
     }
 
     public void Dispose()
@@ -66,5 +66,14 @@ public sealed class ContentToolsTests : IDisposable
     public void ResolveGuid_WithUnknownId_ThrowsInvalidOperationException()
     {
         Assert.Throws<InvalidOperationException>(() => _tool.ResolveGuid("does-not-exist"));
+    }
+
+    [Fact]
+    public async Task GetMaterialDetailsAsync_UsesLiveBridge()
+    {
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _tool.GetMaterialDetailsAsync("material-id", TestContext.Current.CancellationToken));
+
+        Assert.Contains("No Flax Editor bridge session", exception.Message);
     }
 }

@@ -127,6 +127,20 @@ public class ServerInfoToolTests
             throw new NotSupportedException();
         }
 
+        public Task<FlaxMaterialDetails> CreateMaterialAsync(
+            string relativePath, FlaxColor baseColor, double roughness, double metallic,
+            FlaxColor? emissiveColor, string? baseColorTextureId, string? normalTextureId,
+            FlaxVector2? uvTiling, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<FlaxMaterialDetails> GetMaterialDetailsAsync(
+            string materialId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<FlaxBoxColliderDetails> GetBoxColliderDetailsAsync(
             string actorId, CancellationToken cancellationToken = default)
         {
