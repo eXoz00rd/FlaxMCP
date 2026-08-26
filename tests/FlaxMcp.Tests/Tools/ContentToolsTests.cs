@@ -2,6 +2,7 @@ using FlaxMcp.Configuration;
 using FlaxMcp.Flax;
 using FlaxMcp.Tools;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol;
 using Xunit;
 
 namespace FlaxMcp.Tests.Tools;
@@ -69,11 +70,13 @@ public sealed class ContentToolsTests : IDisposable
     }
 
     [Fact]
-    public async Task GetMaterialDetailsAsync_UsesLiveBridge()
+    public async Task GetMaterialDetailsAsync_WithoutBridge_ThrowsClientVisibleError()
     {
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<McpException>(() =>
             _tool.GetMaterialDetailsAsync("material-id", TestContext.Current.CancellationToken));
 
-        Assert.Contains("No Flax Editor bridge session", exception.Message);
+        Assert.Equal(
+            "No Flax Editor bridge session is available for the configured project.",
+            exception.Message);
     }
 }

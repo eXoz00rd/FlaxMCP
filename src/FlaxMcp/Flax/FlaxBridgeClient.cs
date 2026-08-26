@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol;
 
 namespace FlaxMcp.Flax;
 
@@ -150,6 +151,7 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
                                        or JsonException
                                        or TimeoutException
                                        or InvalidOperationException
+                                       or McpException
                                        or KeyNotFoundException)
         {
             return FlaxBridgeStatus.Disconnected;
@@ -434,27 +436,31 @@ public sealed class FlaxBridgeClient : IFlaxBridgeClient
             return root.GetProperty("result").Deserialize<T>(SerializerOptions) ??
                 throw new JsonException("The Flax Editor bridge returned an empty result.");
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             var timeout = connected ?
                 RequestTimeout :
                 ConnectionTimeout;
-            throw new TimeoutException(
+            throw new McpException(
                 $"The Flax Editor bridge did not respond within {timeout.TotalSeconds:0} " +
-                $"{(timeout == ConnectionTimeout ? "second" : "seconds")}."
+                $"{(timeout == ConnectionTimeout ? "second" : "seconds")}.",
+                ex
             );
         }
-        catch (IOException ex) when (connected)
+        catch (IOException ex)
         {
-            throw new IOException("The Flax Editor bridge disconnected before returning a response.", ex);
+            var message = connected ?
+                "The Flax Editor bridge disconnected before returning a response." :
+                "The Flax Editor bridge session is no longer available.";
+            throw new McpException(message, ex);
         }
     }
 
     private FlaxBridgeHandshake RequireHandshake()
     {
         return ReadHandshake() ??
-            throw new InvalidOperationException(
-                $"No Flax Editor bridge session is available for '{_projectFolder}'."
+            throw new McpException(
+                "No Flax Editor bridge session is available for the configured project."
             );
     }
 
@@ -638,7 +644,7 @@ public sealed record FlaxBoxColliderDetails(
 
 internal sealed record FlaxBridgeError(string Code, string Message);
 
-internal sealed class FlaxBridgeProtocolException : InvalidOperationException
+internal sealed class FlaxBridgeProtocolException : McpException
 {
     public FlaxBridgeProtocolException(string message)
         : base(message)
