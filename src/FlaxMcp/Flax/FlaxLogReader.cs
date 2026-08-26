@@ -28,7 +28,12 @@ public static partial class FlaxLogReader
 
     public static string ReadLog(string path)
     {
-        using var stream = File.OpenRead(path);
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete
+        );
         using var reader = new StreamReader(stream, Encoding.Unicode, detectEncodingFromByteOrderMarks: true);
         return reader.ReadToEnd();
     }

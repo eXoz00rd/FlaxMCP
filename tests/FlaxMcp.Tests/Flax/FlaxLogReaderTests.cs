@@ -80,6 +80,20 @@ public sealed class FlaxLogReaderTests : IDisposable
     }
 
     [Fact]
+    public void ReadLog_WhileWriterKeepsFileOpen_ReturnsAvailableContent()
+    {
+        var path = Path.Combine(_logsDir, "Active.txt");
+        using var writer = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
+        writer.Write(Encoding.Unicode.GetPreamble());
+        writer.Write(Encoding.Unicode.GetBytes("[Warning] Active editor log\n"));
+        writer.Flush();
+
+        var text = FlaxLogReader.ReadLog(path);
+
+        Assert.Equal("[Warning] Active editor log\n", text);
+    }
+
+    [Fact]
     public void TryParseTotalErrors_WithZeroErrorsSummary_ReturnsZero()
     {
         var count = FlaxLogReader.TryParseTotalErrors("[Info] Build finished.\n Total errors: 0\n");
