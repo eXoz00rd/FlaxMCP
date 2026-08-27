@@ -1,10 +1,13 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
@@ -31,9 +34,11 @@ internal sealed class PipeBridgeServer : IDisposable
     private const int MaxSceneGraphNodes = 500;
     private const double AssetLoadTimeoutMilliseconds = 3500;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+    private static readonly ConcurrentDictionary<int, MethodInfo> DynamicMethods = new();
+    private static int _nextDynamicMethodId;
     private readonly string _projectFolder;
     private readonly CancellationTokenSource _cts = new();
-    private Thread? _serverThread;
+    private Task? _acceptLoop;
     private NamedPipeServerStream? _currentPipe;
     private string? _handshakePath;
 
@@ -48,17 +53,11 @@ internal sealed class PipeBridgeServer : IDisposable
     public void Start()
     {
         WriteHandshakeFile();
-        _serverThread = new Thread(AcceptLoop)
-        {
-            IsBackground = true,
-            Name = "FlaxMcpBridge pipe server",
-        };
-        _serverThread.Start();
+        _acceptLoop = AcceptLoopAsync(_cts.Token);
     }
 
-    private void AcceptLoop()
+    private async Task AcceptLoopAsync(CancellationToken token)
     {
-        var token = _cts.Token;
         while (!token.IsCancellationRequested)
         {
             NamedPipeServerStream? pipe = null;
@@ -66,8 +65,8 @@ internal sealed class PipeBridgeServer : IDisposable
             {
                 pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
                 _currentPipe = pipe;
-                pipe.WaitForConnection();
-                HandleClient(pipe, token);
+                await pipe.WaitForConnectionAsync(token);
+                await HandleClientAsync(pipe, token);
             }
             catch (OperationCanceledException)
             {
@@ -93,14 +92,14 @@ internal sealed class PipeBridgeServer : IDisposable
         }
     }
 
-    private static void HandleClient(NamedPipeServerStream pipe, CancellationToken token)
+    private static async Task HandleClientAsync(NamedPipeServerStream pipe, CancellationToken token)
     {
         using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-        using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = false, NewLine = "\n" };
+        await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, leaveOpen: true) { AutoFlush = false, NewLine = "\n" };
 
         while (pipe.IsConnected && !token.IsCancellationRequested)
         {
-            var line = reader.ReadLine();
+            var line = await reader.ReadLineAsync(token);
             if (line is null)
                 break;
 
@@ -131,8 +130,8 @@ internal sealed class PipeBridgeServer : IDisposable
                 responseJson = SerializeError(ReadRequestId(line), "request_failed", ex.Message);
             }
 
-            writer.WriteLine(responseJson);
-            writer.Flush();
+            await writer.WriteLineAsync(responseJson);
+            await writer.FlushAsync(token);
         }
     }
 
@@ -234,12 +233,25 @@ internal sealed class PipeBridgeServer : IDisposable
             _ => throw new InvalidOperationException($"Unknown method '{method}'"),
         };
 
-        return JsonSerializer.Serialize(new { id, result });
+        var normalized = NormalizeDynamicResult(result, new HashSet<object>(ReferenceEqualityComparer.Instance), 0);
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["id"] = id,
+            ["result"] = normalized,
+        });
     }
 
     private static string SerializeError(int id, string code, string message)
     {
-        return JsonSerializer.Serialize(new { id, error = new { code, message } });
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["id"] = id,
+            ["error"] = new Dictionary<string, object?>
+            {
+                ["code"] = code,
+                ["message"] = message,
+            },
+        });
     }
 
     private static void ObserveFault(Task task)
@@ -1745,6 +1757,27 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static async Task<object> ExecuteCSharpAsync(string code)
     {
+        Task<(object Result, WeakReference LoadContext)>? executionTask = ExecuteInCollectibleContextAsync(code);
+        var execution = await executionTask;
+        executionTask = null;
+        await InvokeOnUpdateAsync(() => new object());
+        for (var attempt = 0; execution.LoadContext.IsAlive && attempt < 10; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+
+        if (execution.LoadContext.IsAlive)
+        {
+            throw new InvalidOperationException("The dynamic C# assembly could not be unloaded.");
+        }
+
+        return execution.Result;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<(object Result, WeakReference LoadContext)> ExecuteInCollectibleContextAsync(string code)
+    {
         const string typeName = "FlaxMcpBridge.Dynamic.CodeExecution";
         var source = $$"""
             using System;
@@ -1788,37 +1821,134 @@ internal sealed class PipeBridgeServer : IDisposable
 
         assemblyStream.Position = 0;
         var loadContext = new AssemblyLoadContext(compilation.AssemblyName, isCollectible: true);
-        loadContext.Resolving += (_, assemblyName) => loadedAssemblies.FirstOrDefault(
+        Func<AssemblyLoadContext, AssemblyName, Assembly?> resolver = (_, assemblyName) => loadedAssemblies.FirstOrDefault(
             assembly => AssemblyName.ReferenceMatchesDefinition(assembly.GetName(), assemblyName)
         );
+        loadContext.Resolving += resolver;
+        var loadContextReference = new WeakReference(loadContext);
         try
         {
             var assembly = loadContext.LoadFromStream(assemblyStream);
             var method = assembly.GetType(typeName)?.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static) ??
                 throw new InvalidOperationException("Compiled C# entry point was not found.");
-            return await InvokeOnUpdateAsync(() =>
+            var methodId = Interlocked.Increment(ref _nextDynamicMethodId);
+            DynamicMethods[methodId] = method;
+            try
             {
-                try
-                {
-                    var result = method.Invoke(null, null);
-                    return new
-                    {
-                        mainThreadId = checked((int)Globals.MainThreadID),
-                        typeName = result?.GetType().FullName,
-                        result = result is null ?
-                            (JsonElement?)null :
-                            JsonSerializer.SerializeToElement(result, result.GetType()),
-                    };
-                }
-                catch (TargetInvocationException ex) when (ex.InnerException is not null)
-                {
-                    throw ex.InnerException;
-                }
-            });
+                var result = await InvokeOnUpdateAsync(() => ExecuteDynamicMethod(methodId));
+                return (result, loadContextReference);
+            }
+            finally
+            {
+                DynamicMethods.TryRemove(methodId, out _);
+            }
         }
         finally
         {
+            loadContext.Resolving -= resolver;
             loadContext.Unload();
+        }
+    }
+
+    private static object ExecuteDynamicMethod(int methodId)
+    {
+        if (!DynamicMethods.TryRemove(methodId, out var method))
+        {
+            throw new InvalidOperationException("The compiled C# entry point is unavailable.");
+        }
+
+        try
+        {
+            var result = method.Invoke(null, null);
+            return new
+            {
+                mainThreadId = checked((int)Globals.MainThreadID),
+                typeName = result?.GetType().FullName,
+                result = result is null ?
+                    (JsonElement?)null :
+                    SerializeDynamicResult(result),
+            };
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw ex.InnerException;
+        }
+    }
+
+    private static JsonElement SerializeDynamicResult(object result)
+    {
+        var normalized = NormalizeDynamicResult(result, new HashSet<object>(ReferenceEqualityComparer.Instance), 0);
+        return JsonSerializer.SerializeToElement(normalized);
+    }
+
+    private static object? NormalizeDynamicResult(object? value, HashSet<object> visited, int depth)
+    {
+        if (value is JsonElement element)
+        {
+            return element.Clone();
+        }
+        if (value is JsonDocument document)
+        {
+            return document.RootElement.Clone();
+        }
+        if (value is null || value is string || value is bool || value is char ||
+            value is byte || value is sbyte || value is short || value is ushort ||
+            value is int || value is uint || value is long || value is ulong ||
+            value is float || value is double || value is decimal || value is Guid ||
+            value is DateTime || value is DateTimeOffset || value is TimeSpan || value is Uri)
+        {
+            return value;
+        }
+        if (value.GetType().IsEnum)
+        {
+            return Convert.ChangeType(value, Enum.GetUnderlyingType(value.GetType()), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        if (depth >= 32)
+        {
+            throw new InvalidOperationException("The dynamic C# result exceeds the maximum serialization depth of 32.");
+        }
+        if (!value.GetType().IsValueType && !visited.Add(value))
+        {
+            throw new InvalidOperationException("The dynamic C# result contains a reference cycle.");
+        }
+
+        try
+        {
+            if (value is IDictionary dictionary)
+            {
+                var result = new Dictionary<string, object?>();
+                foreach (DictionaryEntry entry in dictionary)
+                {
+                    var key = Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ??
+                        throw new InvalidOperationException("The dynamic C# result contains a null dictionary key.");
+                    result.Add(key, NormalizeDynamicResult(entry.Value, visited, depth + 1));
+                }
+                return result;
+            }
+            if (value is IEnumerable enumerable)
+            {
+                var result = new List<object?>();
+                foreach (var item in enumerable)
+                {
+                    result.Add(NormalizeDynamicResult(item, visited, depth + 1));
+                }
+                return result;
+            }
+
+            return value.GetType()
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(property => property.CanRead && property.GetIndexParameters().Length == 0)
+                .ToDictionary(
+                    property => property.Name,
+                    property => NormalizeDynamicResult(property.GetValue(value), visited, depth + 1)
+                );
+        }
+        finally
+        {
+            if (!value.GetType().IsValueType)
+            {
+                visited.Remove(value);
+            }
         }
     }
 
@@ -1828,15 +1958,15 @@ internal sealed class PipeBridgeServer : IDisposable
         Directory.CreateDirectory(sessionsDir);
         _handshakePath = Path.Combine(sessionsDir, Hash(_projectFolder) + ".json");
 
-        var handshake = new
+        var handshake = new Dictionary<string, object?>
         {
-            pipeName = PipeName,
-            protocolVersion = ProtocolVersion,
-            pid = Environment.ProcessId,
-            projectFolder = _projectFolder,
-            pluginVersion = typeof(PipeBridgeServer).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-            engineBuild = Globals.EngineBuildNumber,
-            startedUtc = DateTime.UtcNow,
+            ["pipeName"] = PipeName,
+            ["protocolVersion"] = ProtocolVersion,
+            ["pid"] = Environment.ProcessId,
+            ["projectFolder"] = _projectFolder,
+            ["pluginVersion"] = typeof(PipeBridgeServer).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+            ["engineBuild"] = Globals.EngineBuildNumber,
+            ["startedUtc"] = DateTime.UtcNow,
         };
         File.WriteAllText(_handshakePath, JsonSerializer.Serialize(handshake));
     }
@@ -1850,19 +1980,39 @@ internal sealed class PipeBridgeServer : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
-        _currentPipe?.Dispose();
-
-        _serverThread?.Join();
-
-        _serverThread = null;
-        _currentPipe = null;
+        var acceptLoopReference = StopAcceptLoop();
         _cts.Dispose();
+        for (var attempt = 0; acceptLoopReference?.IsAlive == true && attempt < 10; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
 
         if (_handshakePath is not null && File.Exists(_handshakePath))
         {
             try { File.Delete(_handshakePath); }
             catch (IOException) { /* best-effort cleanup */ }
         }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private WeakReference? StopAcceptLoop()
+    {
+        _cts.Cancel();
+        _currentPipe?.Dispose();
+
+        var acceptLoop = _acceptLoop;
+        _acceptLoop = null;
+        _currentPipe = null;
+        try
+        {
+            acceptLoop?.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected: cancellation unwinds through the accept loop.
+        }
+
+        return acceptLoop is null ? null : new WeakReference(acceptLoop);
     }
 }
