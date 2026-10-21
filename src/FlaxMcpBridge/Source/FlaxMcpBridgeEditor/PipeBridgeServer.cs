@@ -20,6 +20,11 @@ using FlaxEditor.Surface;
 using FlaxEditor.Windows;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+#if USE_LARGE_WORLDS
+using Real = System.Double;
+#else
+using Real = System.Single;
+#endif
 
 namespace FlaxMcpBridge.Editor;
 
@@ -1391,9 +1396,9 @@ internal sealed class PipeBridgeServer : IDisposable
     private static Vector3 ReadVector3(JsonElement value)
     {
         return new Vector3(
-            value.GetProperty("x").GetSingle(),
-            value.GetProperty("y").GetSingle(),
-            value.GetProperty("z").GetSingle()
+            (Real)value.GetProperty("x").GetDouble(),
+            (Real)value.GetProperty("y").GetDouble(),
+            (Real)value.GetProperty("z").GetDouble()
         );
     }
 
@@ -1404,7 +1409,7 @@ internal sealed class PipeBridgeServer : IDisposable
 
     private static bool IsFinite(Vector3 value)
     {
-        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+        return double.IsFinite(value.X) && double.IsFinite(value.Y) && double.IsFinite(value.Z);
     }
 
     private static object BuildBoxColliderDetails(BoxCollider actor)
@@ -1420,6 +1425,11 @@ internal sealed class PipeBridgeServer : IDisposable
     }
 
     private static object BuildVector3(float x, float y, float z)
+    {
+        return new { x, y, z };
+    }
+
+    private static object BuildVector3(double x, double y, double z)
     {
         return new { x, y, z };
     }
@@ -1496,9 +1506,9 @@ internal sealed class PipeBridgeServer : IDisposable
         var scale = value.GetProperty("scale");
         return new Transform(
             new Vector3(
-                translation.GetProperty("x").GetSingle(),
-                translation.GetProperty("y").GetSingle(),
-                translation.GetProperty("z").GetSingle()
+                (Real)translation.GetProperty("x").GetDouble(),
+                (Real)translation.GetProperty("y").GetDouble(),
+                (Real)translation.GetProperty("z").GetDouble()
             ),
             new Quaternion(
                 orientation.GetProperty("x").GetSingle(),
