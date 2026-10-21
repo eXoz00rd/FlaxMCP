@@ -1,4 +1,6 @@
+using System.Text.Json;
 using FlaxMcp.Configuration;
+using FlaxMcp.Flax;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Xunit;
@@ -131,5 +133,19 @@ public sealed class ToolRegistrationTests
 
         var projectInfo = Assert.Single(tools, tool => tool.ProtocolTool.Name == "project_info");
         Assert.NotNull(projectInfo.ProtocolTool.OutputSchema);
+    }
+
+    [Fact]
+    public void SerializerOptions_DisconnectedStatus_WritesEveryRequiredProperty()
+    {
+        var tools = Register(new FlaxMcpOptions());
+        var flaxStatus = Assert.Single(tools, tool => tool.ProtocolTool.Name == "flax_status");
+        var schema = Assert.IsType<JsonElement>(flaxStatus.ProtocolTool.OutputSchema);
+        var required = schema.GetProperty("required").EnumerateArray().Select(name => name.GetString()!).ToList();
+
+        var json = JsonSerializer.SerializeToElement(FlaxBridgeStatus.Disconnected, ToolRegistration.SerializerOptions);
+
+        Assert.Contains("pluginVersion", required);
+        Assert.All(required, name => Assert.True(json.TryGetProperty(name, out _), $"missing {name}"));
     }
 }
